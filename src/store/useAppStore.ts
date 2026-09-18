@@ -1,0 +1,145 @@
+"use client";
+
+import { create } from "zustand";
+import { streamUtterance, type UtteranceStreamHandle } from "@/lib/chunker";
+import { createTransport, type Transport } from "@/lib/transport";
+import { applyServerEvent } from "@/store/reducer";
+import { createTokenBatcher, type TokenBatcher } from "@/store/tokenBatcher";
+import type { AppState } from "@/store/types";
+import type { ClientEvent } from "@/types/events";
+
+interface AppActions {
+  /** Open the engine connection. Safe to call twice; the second call is a no-op. */
+  connect: () => void;
+  disconnect: () => void;
+
+  /** Stream a typed utterance out as timed chunks, exactly like speech. */
+  sendUtterance: (text: string) => void;
+  /** Cut an in-flight utterance short without emitting `utterance.end`. */
+  stopStreaming: () => void;
+  replayFixture: (fixture: string, speed?: number) => void;
+  newSession: () => void;
+
+  setActiveVersion: (turnId: string, version: number) => void;
+  setHoveredChunk: (chunkId: string | null) => void;
+  toggleTrace: (open?: boolean) => void;
+  toggleSidebar: (open?: boolean) => void;
+  dismissError: () => void;
+}
+
+export type AppStore = AppState & AppActions;
+
+const INITIAL_STATE: AppState = {
+  sessions: [],
+  activeSessionId: null,
+  turns: [],
+  phase: "idle",
+  isListening: false,
+  draftTranscript: "",
+  traceOpen: true,
+  sidebarOpen: true,
+  hoveredChunkId: null,
+  corpus: null,
+  connection: "connecting",
+  transportKind: process.env.NEXT_PUBLIC_TRANSPORT === "mock" ? "mock" : "websocket",
+  lastError: null,
+};
+
+/*
+ * Connection singletons live outside the store: they are imperative handles, not
+ * rendered state, and keeping them here stops a re-render from re-creating them.
+ */
+let transport: Transport | null = null;
+let batcher: TokenBatcher | null = null;
+let utterance: UtteranceStreamHandle | null = null;
+
+export const useAppStore = create<AppStore>()((set, get) => {
+  const emit = (event: ClientEvent) => transport?.send(event);
+
+  return {
+    ...INITIAL_STATE,
+
+    connect: () => {
+      if (transport) return;
+      batcher = createTokenBatcher((event) => set((state) => applyServerEvent(state, event)));
+      transport = createTransport({
+        onEvent: (event) => batcher?.push(event),
+        onStatus: (connection) => set({ connection }),
+      });
+      set({ transportKind: transport.kind });
+      transport.connect();
+    },
+
+    disconnect: () => {
+      utterance?.cancel();
+      utterance = null;
+      transport?.close();
+      transport = null;
+      batcher?.dispose();
+      batcher = null;
+    },
+
+    sendUtterance: (text) => {
+      const trimmed = text.trim();
+      if (!trimmed || get().isListening) return;
+
+      utterance?.cancel();
+      set({ isListening: true, draftTranscript: "", phase: "active", lastError: null });
+      emit({ type: "utterance.start" });
+
+      utterance = streamUtterance({
+        text: trimmed,
+        onChunk: (chunk) => {
+          emit({ type: "utterance.chunk", text: chunk.text });
+          set((state) => ({
+            draftTranscript: state.draftTranscript
+              ? `${state.draftTranscript} ${chunk.text}`
+              : chunk.text,
+          }));
+        },
+        onEnd: () => {
+          emit({ type: "utterance.end" });
+          utterance = null;
+          set({ isListening: false });
+        },
+      });
+    },
+
+    stopStreaming: () => {
+      utterance?.cancel();
+      utterance = null;
+      set({ isListening: false, draftTranscript: "" });
+    },
+
+    replayFixture: (fixture, speed) => {
+      set({ phase: "active", lastError: null });
+      emit({ type: "replay", fixture, ...(speed === undefined ? {} : { speed }) });
+    },
+
+    newSession: () => {
+      utterance?.cancel();
+      utterance = null;
+      emit({ type: "session.new" });
+      set({
+        turns: [],
+        phase: "idle",
+        isListening: false,
+        draftTranscript: "",
+        hoveredChunkId: null,
+        lastError: null,
+      });
+    },
+
+    setActiveVersion: (turnId, version) =>
+      set((state) => ({
+        turns: state.turns.map((turn) =>
+          turn.id === turnId ? { ...turn, activeVersion: version } : turn,
+        ),
+      })),
+
+    setHoveredChunk: (hoveredChunkId) => set({ hoveredChunkId }),
+    toggleTrace: (open) => set((state) => ({ traceOpen: open ?? !state.traceOpen })),
+    toggleSidebar: (open) => set((state) => ({ sidebarOpen: open ?? !state.sidebarOpen })),
+    dismissError: () => set({ lastError: null }),
+  };
+});

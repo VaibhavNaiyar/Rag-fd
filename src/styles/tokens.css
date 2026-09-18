@@ -1,0 +1,124 @@
+/*
+ * Design tokens — the single source of truth for colour, type and motion.
+ *
+ * Blues are values Samsung publishes; neutrals are derived and labelled as such.
+ * Contrast ratios in the comments are measured against --canvas in that theme and
+ * are what the accessibility audit (§11 of the frontend plan) checks.
+ */
+
+:root {
+  /* — Samsung, verified — */
+  --sam-blue: #1428a0; /* brand mark, deepest gradient stop */
+  --ui-primary: #0381fe; /* fills, active toggles, large text (3.77:1 on white) */
+  --ui-primary-ink: #0072de; /* small text + links on light (4.71:1) */
+  --ui-primary-dark: #3e91ff; /* anything on dark (5.98:1) */
+  --ui-primary-soft: #e8f2ff; /* tinted fill behind primary content */
+
+  /* — neutrals, derived — */
+  --canvas: #ffffff;
+  --surface: #f7f7f7;
+  --sunken: #f1f3f5;
+  --raised: #ffffff;
+  --border: #e5e8eb;
+  --border-strong: #d4d9de;
+  --ink: #000000;
+  --ink-body: #1c1c1e;
+  --ink-muted: #75787b;
+
+  /* — semantic — */
+  --ok: #00b140;
+  --ok-ink: #00802f;
+  --ok-soft: #e6f7ec;
+  --warn: #ffc600; /* fill + border ONLY — ~1.7:1 on white, never text */
+  --warn-ink: #8a6a00; /* the words in a warning */
+  --warn-soft: #fff8e1;
+  --error: #e4002b;
+  --error-soft: #fdeaee;
+
+  /* — pipeline state, 1:1 with controller decisions — */
+  --state-wait: var(--ink-muted);
+  --state-retrieve: var(--ui-primary);
+  --state-suppress: var(--ink-muted);
+  --state-refine: var(--sam-blue);
+
+  --ai-glow: linear-gradient(135deg, #1428a0 0%, #0381fe 55%, #3e91ff 100%);
+
+
+  /* — borders derived from the semantic colours —
+     Declared here rather than written as `border-primary/30`: Tailwind v3 cannot
+     apply an opacity modifier to a colour that is itself a CSS variable. */
+  --edge-primary: color-mix(in srgb, var(--ui-primary) 32%, transparent);
+  --edge-brand: color-mix(in srgb, var(--sam-blue) 32%, transparent);
+  --edge-ok: color-mix(in srgb, var(--ok) 32%, transparent);
+  --edge-warn: color-mix(in srgb, var(--warn) 55%, transparent);
+  --edge-error: color-mix(in srgb, var(--error) 38%, transparent);
+  --warn-hover: color-mix(in srgb, var(--warn) 22%, transparent);
+  --scrim: color-mix(in srgb, #000000 38%, transparent);
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-pill: 999px;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 12px rgb(0 0 0 / 0.06);
+  --shadow-lift: 0 2px 6px rgb(0 0 0 / 0.08), 0 10px 26px rgb(0 0 0 / 0.1);
+
+  /* next/font supplies the loaded families; the stacks below are the fallback.
+     Samsung Sharp Sans and SamsungOne are proprietary and are deliberately not
+     shipped — Inter is the closest freely distributable analog for One UI. */
+  --font-ui: var(--font-inter), "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-jetbrains), "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* — layout, animated by the shell grid — */
+  --sidebar-w: 260px;
+  --trace-w: 0px;
+  --ease-oneui: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Dark theme values, shared by the system preference and the manual toggle.
+   Declared once and applied to both selectors so they can never drift apart. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --canvas: #000000; /* true black — One UI's own dark convention */
+    --surface: #121212;
+    --sunken: #1c1c1e;
+    --raised: #1c1c1e;
+    --border: #2e2e30;
+    --border-strong: #3d3d40;
+    --ink: #ffffff;
+    --ink-body: #e5e5e7;
+    --ink-muted: #8e8e93;
+    --ui-primary-ink: #3e91ff;
+    --ui-primary-soft: #10243a;
+    --ok-ink: #3ddc7f;
+    --ok-soft: #0e2618;
+    --warn-ink: #f5c84c;
+    --warn-soft: #2a2110;
+    --error: #ff6b81;
+    --error-soft: #2d1117;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.5), 0 4px 12px rgb(0 0 0 / 0.45);
+    --shadow-lift: 0 2px 6px rgb(0 0 0 / 0.55), 0 10px 26px rgb(0 0 0 / 0.5);
+  }
+}
+
+:root[data-theme="dark"] {
+  --canvas: #000000;
+  --surface: #121212;
+  --sunken: #1c1c1e;
+  --raised: #1c1c1e;
+  --border: #2e2e30;
+  --border-strong: #3d3d40;
+  --ink: #ffffff;
+  --ink-body: #e5e5e7;
+  --ink-muted: #8e8e93;
+  --ui-primary-ink: #3e91ff;
+  --ui-primary-soft: #10243a;
+  --ok-ink: #3ddc7f;
+  --ok-soft: #0e2618;
+  --warn-ink: #f5c84c;
+  --warn-soft: #2a2110;
+  --error: #ff6b81;
+  --error-soft: #2d1117;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.5), 0 4px 12px rgb(0 0 0 / 0.45);
+  --shadow-lift: 0 2px 6px rgb(0 0 0 / 0.55), 0 10px 26px rgb(0 0 0 / 0.5);
+}
