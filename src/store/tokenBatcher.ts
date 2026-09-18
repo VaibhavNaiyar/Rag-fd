@@ -1,37 +1,31 @@
-import type { ServerEvent } from "@/types/events";
+import { EventType, type AGUIEvent } from "@ag-ui/core";
 
 /**
- * Coalesces `answer.token` events onto animation frames.
+ * Coalesces TEXT_MESSAGE_CONTENT events onto animation frames.
  *
  * A setState per token drops frames on a long answer and makes the engine look
  * slower than it is. Buffering here rather than inside a component keeps the
  * batching in one place and out of every message that renders a stream.
  *
- * Any non-token event flushes the buffer first, so a version summary can never
- * be applied ahead of the tokens it describes.
+ * Any other event flushes the buffer first, so a version's grounding record can
+ * never be applied ahead of the text it describes.
  */
 export interface TokenBatcher {
-  push: (event: ServerEvent) => void;
+  push: (event: AGUIEvent) => void;
   dispose: () => void;
 }
 
-interface Pending {
-  turnId: string;
-  version: number;
-  text: string;
-}
-
-export function createTokenBatcher(dispatch: (event: ServerEvent) => void): TokenBatcher {
-  const pending = new Map<string, Pending>();
+export function createTokenBatcher(dispatch: (event: AGUIEvent) => void): TokenBatcher {
+  const pending = new Map<string, string>();
   let frame: number | null = null;
 
   const flush = () => {
     frame = null;
     if (pending.size === 0) return;
-    const batch = [...pending.values()];
+    const batch = [...pending.entries()];
     pending.clear();
-    for (const item of batch) {
-      dispatch({ type: "answer.token", turnId: item.turnId, version: item.version, text: item.text });
+    for (const [messageId, delta] of batch) {
+      dispatch({ type: EventType.TEXT_MESSAGE_CONTENT, messageId, delta });
     }
   };
 
@@ -45,15 +39,12 @@ export function createTokenBatcher(dispatch: (event: ServerEvent) => void): Toke
 
   return {
     push: (event) => {
-      if (event.type !== "answer.token") {
+      if (event.type !== EventType.TEXT_MESSAGE_CONTENT) {
         flush();
         dispatch(event);
         return;
       }
-      const key = `${event.turnId}::${event.version}`;
-      const existing = pending.get(key);
-      if (existing) existing.text += event.text;
-      else pending.set(key, { turnId: event.turnId, version: event.version, text: event.text });
+      pending.set(event.messageId, (pending.get(event.messageId) ?? "") + event.delta);
       schedule();
     },
     dispose: () => {

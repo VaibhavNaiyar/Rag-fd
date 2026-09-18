@@ -1,8 +1,10 @@
+import { EventType, type AGUIEvent } from "@ag-ui/core";
+import { EventSchemas } from "@ag-ui/core/schemas";
 import { describe, expect, it } from "vitest";
-import { applyServerEvent } from "@/store/reducer";
+import { applyAgUiEvent } from "@/store/reducer";
 import { isSuppressed, latestVersion, retrievalLeadMs, selectVersion } from "@/store/selectors";
 import type { AppState } from "@/store/types";
-import type { Hit, ServerEvent } from "@/types/events";
+import type { Hit, SharedTurn, VersionRecord } from "@/types/events";
 
 const EMPTY: AppState = {
   sessions: [],
@@ -16,12 +18,19 @@ const EMPTY: AppState = {
   hoveredChunkId: null,
   corpus: null,
   connection: "connecting",
-  transportKind: "mock",
   lastError: null,
+  shared: null,
+  openRun: null,
+  calls: {},
 };
 
-function play(events: ServerEvent[], from: AppState = EMPTY): AppState {
-  return events.reduce(applyServerEvent, from);
+/** Every event goes through AG-UI's own schema first, the way the socket receives it. */
+function play(events: AGUIEvent[], from: AppState = EMPTY): AppState {
+  return events.reduce((state, event) => {
+    const parsed = EventSchemas.safeParse(event);
+    if (!parsed.success) throw new Error(`not a valid AG-UI event: ${JSON.stringify(event)}`);
+    return applyAgUiEvent(state, parsed.data as AGUIEvent);
+  }, from);
 }
 
 function hit(chunkId: string, subQueryIds: string[], score = 0.9): Hit {
@@ -37,45 +46,105 @@ function hit(chunkId: string, subQueryIds: string[], score = 0.9): Hit {
   };
 }
 
-describe("applyServerEvent", () => {
-  it("moves out of the idle phase on the first turn", () => {
-    const state = play([{ type: "turn.start", turnId: "t1" }]);
+const BLANK_TURN: SharedTurn = {
+  transcript: [],
+  utteranceEndMs: null,
+  decisions: [],
+  subQueries: [],
+  fusion: null,
+  versions: {},
+  latencyMs: null,
+  cost: null,
+};
+
+const VERSION: VersionRecord = {
+  parent: null,
+  claims: [],
+  preserved: [],
+  mutated: [],
+  uncertainty: [],
+  citationSupportRate: 1,
+  fabricatedCitations: 0,
+};
+
+/* — the engine's event shapes, as its translator emits them — */
+
+const opening = (sessionId = "s1"): AGUIEvent[] => [
+  { type: EventType.RUN_STARTED, threadId: sessionId, runId: `${sessionId}:open` },
+  {
+    type: EventType.STATE_SNAPSHOT,
+    snapshot: { session: { id: sessionId, corpus: { docs: 3, chunks: 40 } }, turns: {} },
+  },
+  { type: EventType.RUN_FINISHED, threadId: sessionId, runId: `${sessionId}:open` },
+];
+
+const turnStart = (turnId: string): AGUIEvent[] => [
+  { type: EventType.RUN_STARTED, threadId: "s1", runId: turnId },
+  { type: EventType.STATE_DELTA, delta: [{ op: "add", path: `/turns/${turnId}`, value: BLANK_TURN }] },
+  { type: EventType.STEP_STARTED, stepName: "listen" },
+];
+
+const patch = (turnId: string, op: "add" | "replace", field: string, value: unknown): AGUIEvent => ({
+  type: EventType.STATE_DELTA,
+  delta: [{ op, path: `/turns/${turnId}/${field}`, value }],
+});
+
+const search = (id: string, args: Record<string, unknown>): AGUIEvent[] => [
+  { type: EventType.TOOL_CALL_START, toolCallId: id, toolCallName: "corpus_search" },
+  { type: EventType.TOOL_CALL_ARGS, toolCallId: id, delta: JSON.stringify(args) },
+  { type: EventType.TOOL_CALL_END, toolCallId: id },
+];
+
+const result = (id: string, content: Record<string, unknown>): AGUIEvent => ({
+  type: EventType.TOOL_CALL_RESULT,
+  messageId: `${id}:result`,
+  toolCallId: id,
+  role: "tool",
+  content: JSON.stringify(content),
+});
+
+const text = (messageId: string, delta: string): AGUIEvent => ({
+  type: EventType.TEXT_MESSAGE_CONTENT,
+  messageId,
+  delta,
+});
+
+describe("applyAgUiEvent", () => {
+  it("opens the session from its snapshot without inventing a turn", () => {
+    const state = play(opening());
+    expect(state.turns).toHaveLength(0);
+    expect(state.phase).toBe("idle");
+    expect(state.corpus?.chunks).toBe(40);
+    expect(state.activeSessionId).toBe("s1");
+    expect(state.connection).toBe("open");
+  });
+
+  it("moves out of the idle phase when a turn's run starts", () => {
+    const state = play([...opening(), ...turnStart("t1")]);
     expect(state.phase).toBe("active");
     expect(state.turns).toHaveLength(1);
-  });
-
-  it("ignores a duplicate turn.start", () => {
-    const state = play([
-      { type: "turn.start", turnId: "t1" },
-      { type: "turn.start", turnId: "t1" },
-    ]);
-    expect(state.turns).toHaveLength(1);
-  });
-
-  it("creates a turn when an event arrives before its turn.start", () => {
-    const state = play([
-      { type: "retrieval.started", turnId: "t9", subQueryId: "s1", trigger: "provisional", atMs: 400 },
-    ]);
-    expect(state.turns[0]?.id).toBe("t9");
-    expect(state.turns[0]?.firstRetrievalMs).toBe(400);
+    expect(state.turns[0]?.status).toBe("listening");
   });
 
   it("keeps the earliest retrieval as the lead anchor", () => {
     const state = play([
-      { type: "turn.start", turnId: "t1" },
-      { type: "retrieval.started", turnId: "t1", subQueryId: "s2", trigger: "multi_intent", atMs: 1500 },
-      { type: "retrieval.started", turnId: "t1", subQueryId: "s1", trigger: "provisional", atMs: 800 },
-      { type: "utterance.end", turnId: "t1", atMs: 2100 },
+      ...opening(),
+      ...turnStart("t1"),
+      ...search("t1_sq1", { query: "catering", trigger: "multi_intent", atMs: 1500 }),
+      ...search("t1_p1", { query: "venue", trigger: "provisional", atMs: 800 }),
+      patch("t1", "replace", "utteranceEndMs", 2100),
     ]);
     const turn = state.turns[0];
     expect(turn?.firstRetrievalMs).toBe(800);
     expect(turn && retrievalLeadMs(turn)).toBe(1300);
+    expect(turn?.status).toBe("retrieving");
   });
 
   it("reports no lead until the utterance closes", () => {
     const state = play([
-      { type: "turn.start", turnId: "t1" },
-      { type: "retrieval.started", turnId: "t1", subQueryId: "s1", trigger: "provisional", atMs: 800 },
+      ...opening(),
+      ...turnStart("t1"),
+      ...search("t1_p1", { query: "venue", trigger: "provisional", atMs: 800 }),
     ]);
     const turn = state.turns[0];
     expect(turn && retrievalLeadMs(turn)).toBeNull();
@@ -83,29 +152,46 @@ describe("applyServerEvent", () => {
 
   it("marks a retrieval cancelled without dropping its marker", () => {
     const state = play([
-      { type: "turn.start", turnId: "t1" },
-      { type: "retrieval.started", turnId: "t1", subQueryId: "s1", trigger: "provisional", atMs: 500 },
-      { type: "retrieval.cancelled", turnId: "t1", subQueryId: "s1", reason: "duplicate_query" },
+      ...opening(),
+      ...turnStart("t1"),
+      ...search("t1_p1", { query: "venue", trigger: "provisional", atMs: 500 }),
+      result("t1_p1", { cancelled: true, reason: "topic_shift" }),
     ]);
     expect(state.turns[0]?.retrievals).toHaveLength(1);
-    expect(state.turns[0]?.retrievals[0]?.cancelledReason).toBe("duplicate_query");
+    expect(state.turns[0]?.retrievals[0]?.cancelledReason).toBe("topic_shift");
+  });
+
+  it("adds no timeline marker for a reused search", () => {
+    const state = play([
+      ...opening(),
+      ...turnStart("t1"),
+      ...search("t1_sq1", { query: "venue", reused: true }),
+      result("t1_sq1", { candidates: 4, kept: [hit("c1", ["t1_sq1"])], reused: true }),
+    ]);
+    expect(state.turns[0]?.retrievals).toHaveLength(0);
+    expect(state.turns[0]?.evidence).toHaveLength(1);
   });
 
   it("unions sub-query attribution when a chunk satisfies two intents", () => {
     const state = play([
-      { type: "turn.start", turnId: "t1" },
-      { type: "retrieval.result", turnId: "t1", subQueryId: "s1", candidates: 10, kept: [hit("c1", ["s1"])] },
-      { type: "retrieval.result", turnId: "t1", subQueryId: "s2", candidates: 10, kept: [hit("c1", ["s2"])] },
+      ...opening(),
+      ...turnStart("t1"),
+      ...search("s1", { query: "a", trigger: "multi_intent", atMs: 10 }),
+      ...search("s2", { query: "b", trigger: "multi_intent", atMs: 10 }),
+      result("s1", { candidates: 10, kept: [hit("c1", ["s1"])], reused: false }),
+      result("s2", { candidates: 10, kept: [hit("c1", ["s2"])], reused: false }),
     ]);
     expect(state.turns[0]?.evidence).toHaveLength(1);
     expect(state.turns[0]?.evidence[0]?.subQueryIds.sort()).toEqual(["s1", "s2"]);
   });
 
-  it("accumulates streamed tokens into the right version", () => {
+  it("accumulates streamed text into the right version", () => {
     const state = play([
-      { type: "turn.start", turnId: "t1" },
-      { type: "answer.token", turnId: "t1", version: 1, text: "Hello" },
-      { type: "answer.token", turnId: "t1", version: 1, text: " world" },
+      ...opening(),
+      ...turnStart("t1"),
+      { type: EventType.TEXT_MESSAGE_START, messageId: "t1:v1", role: "assistant" },
+      text("t1:v1", "Hello"),
+      text("t1:v1", " world"),
     ]);
     const turn = state.turns[0];
     expect(turn && selectVersion(turn, 1)?.body).toBe("Hello world");
@@ -114,83 +200,76 @@ describe("applyServerEvent", () => {
 
   it("keeps v1 intact and makes v2 active on a refinement", () => {
     const state = play([
-      { type: "turn.start", turnId: "t1" },
-      { type: "answer.token", turnId: "t1", version: 1, text: "first" },
-      {
-        type: "answer.version",
-        turnId: "t1",
-        version: 1,
-        parent: null,
-        claims: [],
-        preserved: [],
-        mutated: [],
-        uncertainty: [],
-        citationSupportRate: 1,
-        fabricatedCitations: 0,
-      },
-      { type: "fusion.final", turnId: "t1", hits: [], quotaApplied: true, fullCorpusSearch: false },
-      { type: "answer.token", turnId: "t1", version: 2, text: "second" },
-      {
-        type: "answer.version",
-        turnId: "t1",
-        version: 2,
-        parent: 1,
-        claims: [],
-        preserved: ["a"],
-        mutated: ["b"],
-        uncertainty: [],
-        citationSupportRate: 0.9,
-        fabricatedCitations: 0,
-      },
+      ...opening(),
+      ...turnStart("t1"),
+      { type: EventType.TEXT_MESSAGE_START, messageId: "t1:v1", role: "assistant" },
+      text("t1:v1", "first"),
+      { type: EventType.TEXT_MESSAGE_END, messageId: "t1:v1" },
+      patch("t1", "add", "versions/1", VERSION),
+      patch("t1", "replace", "fusion", { hits: [], quotaApplied: true, fullCorpusSearch: false }),
+      { type: EventType.TEXT_MESSAGE_START, messageId: "t1:v2", role: "assistant" },
+      text("t1:v2", "second"),
+      { type: EventType.TEXT_MESSAGE_END, messageId: "t1:v2" },
+      patch("t1", "add", "versions/2", { ...VERSION, parent: 1, preserved: ["a"], mutated: ["b"] }),
     ]);
 
     const turn = state.turns[0];
     expect(turn?.versions).toHaveLength(2);
     expect(turn?.activeVersion).toBe(2);
     expect(turn && selectVersion(turn, 1)?.body).toBe("first");
+    expect(turn && selectVersion(turn, 2)?.preserved).toEqual(["a"]);
     // The G5 proof has to survive the reducer, not just the wire.
     expect(turn && latestVersion(turn)?.fullCorpusSearch).toBe(false);
   });
 
   it("recognises a suppressed turn as one that never retrieved", () => {
     const state = play([
-      { type: "turn.start", turnId: "t1" },
-      {
-        type: "controller.decision",
-        turnId: "t1",
-        decision: "suppress",
-        reason: "presentation_only",
-        atMs: 600,
-      },
-      { type: "utterance.end", turnId: "t1", atMs: 900 },
+      ...opening(),
+      ...turnStart("t1"),
+      patch("t1", "add", "decisions/-", { decision: "suppress", reason: "presentation_restructure", atMs: 600 }),
+      patch("t1", "replace", "utteranceEndMs", 900),
     ]);
     const turn = state.turns[0];
     expect(turn && isSuppressed(turn)).toBe(true);
     expect(turn && retrievalLeadMs(turn)).toBeNull();
   });
 
-  it("attaches a turn-scoped error to that turn", () => {
-    const state = play([
-      { type: "turn.start", turnId: "t1" },
-      { type: "error", turnId: "t1", code: "retriever_timeout", message: "index unavailable" },
-    ]);
-    expect(state.turns[0]?.status).toBe("error");
-    expect(state.lastError?.code).toBe("retriever_timeout");
+  it("completes a turn when its run finishes, and not before", () => {
+    const events = [...opening(), ...turnStart("t1"), { type: EventType.STEP_FINISHED, stepName: "listen" }];
+    expect(play(events as AGUIEvent[]).turns[0]?.status).toBe("listening");
+    const done = play([...(events as AGUIEvent[]), { type: EventType.RUN_FINISHED, threadId: "s1", runId: "t1" }]);
+    expect(done.turns[0]?.status).toBe("complete");
+    expect(done.openRun).toBeNull();
   });
 
-  it("records a session-level error without inventing a turn", () => {
-    const state = play([{ type: "error", code: "socket", message: "dropped" }]);
+  it("attaches a run error to the turn whose run failed", () => {
+    const state = play([
+      ...opening(),
+      ...turnStart("t1"),
+      { type: EventType.RUN_ERROR, message: "index unavailable", code: "turn_failed" },
+    ]);
+    expect(state.turns[0]?.status).toBe("error");
+    expect(state.turns[0]?.errorMessage).toBe("index unavailable");
+    expect(state.lastError?.code).toBe("turn_failed");
+  });
+
+  it("records an error outside any run without inventing a turn", () => {
+    const state = play([...opening(), { type: EventType.RUN_ERROR, message: "frame is not JSON", code: "bad_json" }]);
     expect(state.turns).toHaveLength(0);
-    expect(state.lastError?.message).toBe("dropped");
+    expect(state.lastError?.message).toBe("frame is not JSON");
   });
 
   it("titles the session from the first transcript chunk", () => {
     const state = play([
-      { type: "session.ready", sessionId: "s1", corpus: { docs: 3, chunks: 40 } },
-      { type: "turn.start", turnId: "t1" },
-      { type: "transcript.chunk", turnId: "t1", text: "how does fusion work", atMs: 100 },
+      ...opening(),
+      ...turnStart("t1"),
+      patch("t1", "add", "transcript/-", { text: "how does fusion work", atMs: 100 }),
     ]);
     expect(state.sessions[0]?.title).toBe("how does fusion work");
-    expect(state.corpus?.chunks).toBe(40);
+  });
+
+  it("flags a patch that does not apply instead of rendering drifted state", () => {
+    const state = play([...opening(), patch("t404", "replace", "utteranceEndMs", 1)]);
+    expect(state.lastError?.code).toBe("state_out_of_sync");
   });
 });

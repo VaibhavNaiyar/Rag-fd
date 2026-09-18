@@ -1,6 +1,8 @@
+import type { AGUIEvent } from "@ag-ui/core";
+import { EventSchemas } from "@ag-ui/core/schemas";
 import { RECONNECT_BACKOFF_MS } from "@/lib/constants";
 import type { Transport, TransportHandlers } from "@/lib/transport/types";
-import { isServerEvent, type ClientEvent } from "@/types/events";
+import type { ClientEvent } from "@/types/events";
 
 /** Derive the engine endpoint. Unset env means "same origin", which is what the
  *  single-container deployment relies on. */
@@ -15,9 +17,10 @@ function resolveUrl(): string {
 /**
  * WebSocket transport with capped exponential backoff.
  *
- * Frames that do not parse, or that parse to something without a `type`, are
- * dropped with a console warning rather than crashing the stream — a malformed
- * frame mid-demo should cost one event, not the session.
+ * Every frame is checked against AG-UI's own event schemas. One that does not
+ * parse, or is not a valid AG-UI event, is dropped with a console warning
+ * rather than crashing the stream — a malformed frame mid-demo should cost one
+ * event, not the session.
  */
 export function createWebSocketTransport(handlers: TransportHandlers): Transport {
   let socket: WebSocket | null = null;
@@ -70,11 +73,12 @@ export function createWebSocketTransport(handlers: TransportHandlers): Transport
         console.warn("[transport] dropped unparseable frame");
         return;
       }
-      if (!isServerEvent(parsed)) {
-        console.warn("[transport] dropped frame without a type", parsed);
+      const event = EventSchemas.safeParse(parsed);
+      if (!event.success) {
+        console.warn("[transport] dropped a frame that is not an AG-UI event", parsed);
         return;
       }
-      handlers.onEvent(parsed);
+      handlers.onEvent(event.data as AGUIEvent);
     };
 
     socket.onerror = () => {
@@ -89,7 +93,6 @@ export function createWebSocketTransport(handlers: TransportHandlers): Transport
   }
 
   return {
-    kind: "websocket",
     connect: open,
     send: (event) => {
       queue.push(event);

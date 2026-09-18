@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { streamUtterance, type UtteranceStreamHandle } from "@/lib/chunker";
 import { createTransport, type Transport } from "@/lib/transport";
-import { applyServerEvent } from "@/store/reducer";
+import { applyAgUiEvent } from "@/store/reducer";
 import { createTokenBatcher, type TokenBatcher } from "@/store/tokenBatcher";
 import type { AppState } from "@/store/types";
 import type { ClientEvent } from "@/types/events";
@@ -41,8 +41,10 @@ const INITIAL_STATE: AppState = {
   hoveredChunkId: null,
   corpus: null,
   connection: "connecting",
-  transportKind: process.env.NEXT_PUBLIC_TRANSPORT === "mock" ? "mock" : "websocket",
   lastError: null,
+  shared: null,
+  openRun: null,
+  calls: {},
 };
 
 /*
@@ -61,12 +63,11 @@ export const useAppStore = create<AppStore>()((set, get) => {
 
     connect: () => {
       if (transport) return;
-      batcher = createTokenBatcher((event) => set((state) => applyServerEvent(state, event)));
+      batcher = createTokenBatcher((event) => set((state) => applyAgUiEvent(state, event)));
       transport = createTransport({
         onEvent: (event) => batcher?.push(event),
         onStatus: (connection) => set({ connection }),
       });
-      set({ transportKind: transport.kind });
       transport.connect();
     },
 
@@ -127,6 +128,8 @@ export const useAppStore = create<AppStore>()((set, get) => {
         draftTranscript: "",
         hoveredChunkId: null,
         lastError: null,
+        openRun: null,
+        calls: {},
       });
     },
 

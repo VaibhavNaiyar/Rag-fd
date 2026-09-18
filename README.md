@@ -21,8 +21,7 @@ Where a design decision trades trace legibility for chat polish, trace legibilit
 
 ```bash
 npm install
-npm run dev          # talks to the real engine at ws://<host>/stream
-npm run dev:mock     # in-browser simulator — no backend needed
+npm run dev          # talks to the engine's AG-UI stream at ws://<host>/stream
 ```
 
 Open <http://localhost:3000>. Add `?demo=1` for the fixture bar.
@@ -36,7 +35,6 @@ npm run build        # static export into ./out
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `NEXT_PUBLIC_TRANSPORT` | `websocket` | `mock` swaps in the in-browser simulator |
 | `NEXT_PUBLIC_WS_URL` | derived from `window.location` | Absolute engine endpoint |
 
 Leaving `NEXT_PUBLIC_WS_URL` unset is what the single-container deployment relies on.
@@ -58,36 +56,37 @@ Mount this **after** `/stream` and any `/api` routes, or it will shadow them.
 
 ---
 
-## The wire contract
+## The wire contract: AG-UI
 
-`src/types/events.ts` is the single source of truth and mirrors the engine's
-telemetry schema — the UI renders the same record the graders read. **Change it
-only in lockstep with the backend.** The reducer switches exhaustively over
-`ServerEvent` with a `never` check, so an event type the engine adds and the UI
-forgets is a compile error, not a silently dropped trace.
+The engine speaks [AG-UI](https://docs.ag-ui.com), the open protocol for agent ↔
+UI streams. Every frame is a standard AG-UI event, validated on arrival against
+`@ag-ui/core`'s own schemas; one that fails is dropped with a warning, never
+rendered. `src/types/events.ts` holds only the shape of OUR payloads inside those
+events, mirrored from the engine's translator (`slr/api/agui.py`). **Change it only
+in lockstep with the backend.**
 
 ### Server → client
 
-| Event | Carries |
+| AG-UI event | Carries |
 |---|---|
-| `session.ready` | session id, corpus doc/chunk counts |
-| `turn.start` | turn id |
-| `transcript.chunk` | text + `atMs`, echoed back so the timeline has ground truth |
-| `controller.decision` | `wait` / `retrieve` / `suppress` / `refine`, reason code, confidence |
-| `retrieval.started` | sub-query id, trigger, `atMs` — **this is the G2 evidence** |
-| `retrieval.cancelled` | sub-query id + reason (the thrash guard) |
-| `utterance.end` | `atMs` — the rule every lead is measured against |
-| `subqueries` | the decomposition |
-| `retrieval.result` | per-branch candidate count and kept hits |
-| `fusion.final` | fused hits, `quotaApplied`, `fullCorpusSearch` |
-| `answer.token` | streamed text, tagged with its version |
-| `answer.version` | claims, `preserved` / `mutated` ids, uncertainty, support rate |
-| `turn.complete` | latency breakdown and cost breakdown |
-| `error` | code + message, optionally scoped to a turn |
+| `RUN_STARTED` / `RUN_FINISHED` / `RUN_ERROR` | one run per turn (`runId` = turn id, `threadId` = session). `RUN_FINISHED.usage` is token spend per model |
+| `STEP_STARTED` / `STEP_FINISHED` | the pipeline stage: `listen` → `plan` → `retrieve` → `synthesise` |
+| `TOOL_CALL_START` / `ARGS` / `END` | one `corpus_search` per retrieval: `{query, trigger, atMs}`. **This is the G2 evidence** |
+| `TOOL_CALL_RESULT` | candidate count and kept hits, or `{cancelled, reason}` (the thrash guard) |
+| `TEXT_MESSAGE_START` / `CONTENT` / `END` | the answer, one message per version (`<turnId>:v<n>`) |
+| `STATE_SNAPSHOT` / `STATE_DELTA` | shared state, patched with `fast-json-patch`: per turn the echoed transcript, controller decisions, `utteranceEndMs` (the line every lead is measured against), sub-queries, fusion (`quotaApplied`, `fullCorpusSearch`), each version's claims / `preserved` / `mutated` / uncertainty / support rate, latency and cost |
+
+A session opens as its own short run (`RUN_STARTED`, `STATE_SNAPSHOT`,
+`RUN_FINISHED`), so every frame sits inside a run. The engine also serves
+`POST /agui` (AG-UI over SSE), so any off-the-shelf AG-UI client can talk to it.
 
 ### Client → server
 
 `utterance.start` · `utterance.chunk` · `utterance.end` · `replay` · `session.new`
+
+These stay three small input messages (plus two controls) because AG-UI has no
+event for input arriving while a run is already under way, and that is exactly
+what full-duplex early retrieval needs.
 
 ### Two contract rules the backend must hold
 
@@ -95,7 +94,7 @@ forgets is a compile error, not a silently dropped trace.
    in the answer body against `Hit.citation`. A marker with no matching hit renders
    in red as "unverified" — deliberately impossible to miss. The model must never
    author a citation string.
-2. **`transcript.chunk` is echoed.** The user bubble and the timeline both read from
+2. **The transcript is echoed.** The user bubble and the timeline both read from
    the server's transcript, not the client's draft, so what a judge sees is what the
    engine consumed.
 
@@ -155,15 +154,15 @@ src/
 ├── styles/
 │   ├── tokens.css        EVERY colour, font and radius — the only place literals live
 │   └── globals.css       shell grid, prose, view-transition, reduced-motion
-├── types/events.ts       the wire contract
+├── types/events.ts       our payloads inside AG-UI events
 ├── store/
 │   ├── types.ts          Turn / AnswerVersion / AppState
-│   ├── reducer.ts        one exhaustive branch per ServerEvent
-│   ├── tokenBatcher.ts   coalesces answer.token onto animation frames
+│   ├── reducer.ts        AG-UI events → turns (state patches, tool calls, text)
+│   ├── tokenBatcher.ts   coalesces TEXT_MESSAGE_CONTENT onto animation frames
 │   ├── selectors.ts      every derived read (lead time, grouping, rollups)
 │   └── useAppStore.ts    Zustand store + imperative connection handles
 ├── lib/
-│   ├── transport/        Transport interface · socket.ts · mock/ (dev only)
+│   ├── transport/        Transport interface · socket.ts (AG-UI schema validation)
 │   ├── chunker.ts        text → timed chunks at speaking pace
 │   ├── citations.tsx     markdown renderers that inject citation chips
 │   ├── citationPattern.ts  the marker format, pure and tested
@@ -212,15 +211,6 @@ hardcoded in frontend code, and the console replays exactly what the eval harnes
 scores. The same four fixtures are the suggestion chips on the idle screen, so an
 unscripted judge clicking around still lands on the behaviours that matter.
 
-### The simulator
-
-`src/lib/transport/mock/` is a stand-in engine, active **only** when
-`NEXT_PUBLIC_TRANSPORT=mock`. It is dynamically imported into its own chunk, so an
-unflagged build never fetches or runs it (the chunk file still sits in `out/`; delete
-the directory before the final build if you want it gone entirely). When it is running the connection badge reads
-**"Simulated engine"** in amber — nobody should ever mistake a simulated trace for a
-real one. Delete this directory once the engine is live if you prefer.
-
 ---
 
 ## Accessibility
@@ -245,12 +235,13 @@ real one. Delete this directory once the engine is live if you prefer.
 npm run test
 ```
 
-44 tests over the pure layer. The one worth knowing about is
-`src/lib/transport/mock/script.test.ts`: it compiles each fixture into an event
-script, replays it through the real reducer in delivery order, and asserts the trace
-state a judge would read — retrieval lead > 0, three sub-queries, `fullCorpusSearch:
-false` on the refinement, no fabricated citations, a complete telemetry record. That
-is the gate behaviour verified without a browser.
+30 tests over the pure layer. The one worth knowing about is
+`src/store/reducer.test.ts`: every event in it goes through AG-UI's own schema
+first, the way the socket receives it, then through the real reducer, and it
+asserts the trace state a judge would read — retrieval lead > 0, cancelled
+searches keep their marker, v1 survives a refinement with `fullCorpusSearch: false`
+on v2, a patch that does not apply is flagged rather than rendered. The backend's
+`tests/test_agui.py` checks the other side: every live stream is protocol-correct.
 
 ---
 

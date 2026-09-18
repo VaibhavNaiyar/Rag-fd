@@ -1,9 +1,20 @@
 /**
  * The wire contract.
  *
- * This file mirrors the telemetry schema the backend emits, so the UI renders
- * exactly the record the graders read — no client-side reinterpretation. Change
- * it only in lockstep with the engine's event schema.
+ * Server -> client is AG-UI (https://docs.ag-ui.com): every frame is a standard
+ * AG-UI event, validated against `@ag-ui/core`'s own schemas on arrival. What
+ * this file adds is the shape of OUR payloads inside those events, mirrored from
+ * the engine's translator (`Samsung-bd/src/slr/api/agui.py`):
+ *
+ * - a turn is one run (`runId` = turn id, `threadId` = session id)
+ * - the pipeline stages are steps: `listen` → `plan` → `retrieve` → `synthesise`
+ * - a retrieval is a `corpus_search` tool call: {@link SearchArgs} in, {@link SearchResult} out
+ * - answer text is one text message per version, `messageId` = `<turnId>:v<n>`
+ * - everything else is {@link SharedState}, via STATE_SNAPSHOT then STATE_DELTA
+ *
+ * Client -> server stays three input messages ({@link ClientEvent}): AG-UI has no
+ * event for input that arrives while a run is under way, which is exactly what
+ * early retrieval needs. Change this file only in lockstep with the translator.
  */
 
 /** Retrieval controller verdict for one transcript fragment. */
@@ -17,6 +28,9 @@ export type SubQuerySource = "provisional" | "decomposed";
 
 /** Which arm of the hybrid retriever surfaced a chunk. */
 export type RetrievalBranch = "bm25" | "dense";
+
+/** A pipeline stage, as an AG-UI step name. */
+export type PipelineStep = "listen" | "plan" | "retrieve" | "synthesise";
 
 /** A corpus chunk that survived fusion and reranking. */
 export interface Hit {
@@ -58,6 +72,8 @@ export interface CostBreakdown {
   turnUsd: number;
   turnTokens: number;
   steps: { step: string; usd: number }[];
+  /** Model tokens per model. Also sent as RUN_FINISHED.usage in AG-UI's own shape. */
+  models: { model: string; inputTokens: number; outputTokens: number }[];
 }
 
 export interface CorpusInfo {
@@ -67,60 +83,65 @@ export interface CorpusInfo {
   indexedAt?: number;
 }
 
-export type ServerEvent =
-  | { type: "session.ready"; sessionId: string; corpus: CorpusInfo }
-  | { type: "turn.start"; turnId: string }
-  | { type: "transcript.chunk"; turnId: string; text: string; atMs: number }
-  | {
-      type: "controller.decision";
-      turnId: string;
-      decision: Decision;
-      reason: string;
-      atMs: number;
-      confidence?: number;
-    }
-  | {
-      type: "retrieval.started";
-      turnId: string;
-      subQueryId: string;
-      trigger: RetrievalTrigger;
-      atMs: number;
-    }
-  | { type: "retrieval.cancelled"; turnId: string; subQueryId: string; reason: string }
-  | { type: "utterance.end"; turnId: string; atMs: number }
-  | { type: "subqueries"; turnId: string; items: SubQueryItem[] }
-  | { type: "retrieval.result"; turnId: string; subQueryId: string; candidates: number; kept: Hit[] }
-  | {
-      type: "fusion.final";
-      turnId: string;
-      hits: Hit[];
-      quotaApplied: boolean;
-      fullCorpusSearch: boolean;
-    }
-  | { type: "answer.token"; turnId: string; version: number; text: string }
-  | {
-      type: "answer.version";
-      turnId: string;
-      version: number;
-      parent: number | null;
-      claims: Claim[];
-      /** Claim ids carried unchanged from the parent version. */
-      preserved: string[];
-      /** Claim ids the late detail rewrote. */
-      mutated: string[];
-      uncertainty: string[];
-      citationSupportRate: number;
-      fabricatedCitations: number;
-    }
-  | {
-      type: "turn.complete";
-      turnId: string;
-      latencyMs: LatencyBreakdown;
-      cost: CostBreakdown;
-    }
-  | { type: "error"; turnId?: string; code: string; message: string };
+export interface DecisionRecord {
+  decision: Decision;
+  reason: string;
+  atMs: number;
+  confidence?: number;
+}
 
-export type ServerEventType = ServerEvent["type"];
+/** One answer version's grounding record. Its text streams separately as a text message. */
+export interface VersionRecord {
+  parent: number | null;
+  claims: Claim[];
+  /** Claim ids carried unchanged from the parent version. */
+  preserved: string[];
+  /** Claim ids the late detail rewrote. */
+  mutated: string[];
+  uncertainty: string[];
+  citationSupportRate: number;
+  fabricatedCitations: number;
+}
+
+export interface SharedTurn {
+  transcript: { text: string; atMs: number }[];
+  utteranceEndMs: number | null;
+  decisions: DecisionRecord[];
+  subQueries: SubQueryItem[];
+  fusion: { hits: Hit[]; quotaApplied: boolean; fullCorpusSearch: boolean } | null;
+  /** Keyed by version number. */
+  versions: Record<string, VersionRecord>;
+  latencyMs: LatencyBreakdown | null;
+  cost: CostBreakdown | null;
+}
+
+/** The AG-UI shared state the engine maintains for one session. */
+export interface SharedState {
+  session: { id: string; corpus: CorpusInfo } | null;
+  /** Keyed by turn id, in the order the turns happened. */
+  turns: Record<string, SharedTurn>;
+}
+
+/** Name of the one tool the engine calls. */
+export const SEARCH_TOOL = "corpus_search";
+
+/** `corpus_search` arguments. A reused call answers a decomposed sub-query from a search already running. */
+export type SearchArgs =
+  | { query: string; trigger: RetrievalTrigger; atMs: number }
+  | { query: string; reused: true };
+
+/** `corpus_search` result. */
+export type SearchResult =
+  | { cancelled: true; reason: string }
+  | { candidates: number; kept: Hit[]; reused: boolean };
+
+/** Split `<turnId>:v<n>`, the id of one answer version's text message. */
+export function parseMessageId(messageId: string): { turnId: string; version: number } | null {
+  const at = messageId.lastIndexOf(":v");
+  if (at <= 0) return null;
+  const version = Number(messageId.slice(at + 2));
+  return Number.isInteger(version) && version > 0 ? { turnId: messageId.slice(0, at), version } : null;
+}
 
 export type ClientEvent =
   | { type: "utterance.start" }
@@ -129,13 +150,3 @@ export type ClientEvent =
   /** Demo mode. Payloads live in `evals/fixtures/` server-side, never here. */
   | { type: "replay"; fixture: string; speed?: number }
   | { type: "session.new" };
-
-/** Narrow an unknown socket frame to a ServerEvent without trusting the wire. */
-export function isServerEvent(value: unknown): value is ServerEvent {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "type" in value &&
-    typeof (value as { type: unknown }).type === "string"
-  );
-}

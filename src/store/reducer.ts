@@ -1,14 +1,33 @@
+import { EventType, type AGUIEvent } from "@ag-ui/core";
+import { applyPatch, type Operation } from "fast-json-patch";
 import { EVIDENCE_SNIPPET_CHARS } from "@/lib/constants";
 import { titleFromText, truncate } from "@/lib/format";
-import type { AnswerVersion, AppState, Turn } from "@/store/types";
-import type { Hit, ServerEvent } from "@/types/events";
+import type { AnswerVersion, AppState, Turn, TurnStatus } from "@/store/types";
+import {
+  parseMessageId,
+  type Hit,
+  type PipelineStep,
+  type SearchArgs,
+  type SearchResult,
+  type SharedState,
+  type SharedTurn,
+} from "@/types/events";
 
 /**
- * The event reducer.
+ * The AG-UI event reducer.
  *
- * One branch per `ServerEvent` variant, with a `never` check in `default` — an
- * event type the engine adds and the UI forgets becomes a compile error rather
- * than a silently dropped trace, which is the whole point of gate G6.
+ * The engine speaks standard AG-UI (see `types/events.ts` for how our payloads
+ * sit inside it). This folds that stream into the `Turn` records the UI renders:
+ *
+ * - STATE_SNAPSHOT / STATE_DELTA  → the shared state, patched with fast-json-patch,
+ *   then synced into the turns it touched (transcript, decisions, sub-queries,
+ *   fusion, version records, latency, cost)
+ * - `corpus_search` tool calls    → the retrieval timeline and the evidence
+ * - TEXT_MESSAGE_*                → each answer version's streamed body
+ * - STEP_* / RUN_*                → the turn's status
+ *
+ * AG-UI events this engine never sends are ignored rather than rejected: a
+ * standard event we do not use is not an error.
  */
 
 export function createTurn(id: string): Turn {
@@ -32,7 +51,14 @@ export function createTurn(id: string): Turn {
   };
 }
 
-/** Replace one turn, creating it if the engine referenced it before `turn.start`. */
+const STEP_STATUS: Record<PipelineStep, TurnStatus> = {
+  listen: "listening",
+  plan: "retrieving",
+  retrieve: "retrieving",
+  synthesise: "answering",
+};
+
+/** Replace one turn, creating it if it has not been seen yet. */
 function withTurn(state: AppState, turnId: string, mutate: (turn: Turn) => Turn): AppState {
   const index = state.turns.findIndex((turn) => turn.id === turnId);
   const turns = [...state.turns];
@@ -45,7 +71,7 @@ function withTurn(state: AppState, turnId: string, mutate: (turn: Turn) => Turn)
     turns[index] = mutate(existing);
   }
 
-  return { ...state, turns };
+  return { ...state, turns, phase: "active" };
 }
 
 function withVersion(
@@ -112,158 +138,219 @@ function touchSession(state: AppState, title?: string): AppState {
   return { ...state, sessions };
 }
 
-export function applyServerEvent(state: AppState, event: ServerEvent): AppState {
+/** Fold one turn of the shared state into its rendered record. */
+function syncTurn(turn: Turn, shared: SharedTurn): Turn {
+  const fullCorpusSearch = shared.fusion?.fullCorpusSearch ?? turn.fullCorpusSearch;
+  let next: Turn = {
+    ...turn,
+    transcript: shared.transcript,
+    utteranceEndMs: shared.utteranceEndMs,
+    decisions: shared.decisions,
+    subQueries: shared.subQueries.map((item) => {
+      const prior = turn.subQueries.find((candidate) => candidate.id === item.id);
+      return { ...item, ...(prior ? { candidates: prior.candidates, keptCount: prior.keptCount } : {}) };
+    }),
+    evidence: shared.fusion ? mergeEvidence(turn.evidence, shared.fusion.hits) : turn.evidence,
+    quotaApplied: shared.fusion?.quotaApplied ?? turn.quotaApplied,
+    fullCorpusSearch,
+    latencyMs: shared.latencyMs,
+    cost: shared.cost,
+  };
+  for (const [key, record] of Object.entries(shared.versions)) {
+    const version = Number(key);
+    const isNew = !turn.versions.some((v) => v.version === version && v.complete);
+    next = withVersion(next, version, (draft) => ({ ...draft, ...record, fullCorpusSearch, complete: true }));
+    // The newest version is what the reader should be looking at.
+    if (isNew) next = { ...next, activeVersion: version };
+  }
+  return next;
+}
+
+/** Turn ids a JSON Patch touched: the key after `/turns/`, RFC 6901-unescaped. */
+function touchedTurns(delta: Operation[]): Set<string> {
+  const ids = new Set<string>();
+  for (const op of delta) {
+    const [root, id] = op.path.split("/").slice(1);
+    if (root === "turns" && id !== undefined) ids.add(id.replace(/~1/g, "/").replace(/~0/g, "~"));
+  }
+  return ids;
+}
+
+function syncShared(state: AppState, shared: SharedState, only?: Set<string>): AppState {
+  let next: AppState = { ...state, shared, corpus: shared.session?.corpus ?? state.corpus };
+  const firstWords: string[] = [];
+  for (const [turnId, turn] of Object.entries(shared.turns)) {
+    if (only && !only.has(turnId)) continue;
+    next = withTurn(next, turnId, (existing) => {
+      if (existing.transcript.length === 0 && turn.transcript[0]) firstWords.push(turn.transcript[0].text);
+      return syncTurn(existing, turn);
+    });
+  }
+  return firstWords.length > 0 ? touchSession(next, firstWords[0]) : next;
+}
+
+function openSession(state: AppState, shared: SharedState): AppState {
+  const id = shared.session?.id;
+  const opened: AppState = {
+    ...state,
+    connection: "open",
+    lastError: null,
+    activeSessionId: state.activeSessionId ?? id ?? null,
+    sessions:
+      state.sessions.length > 0 || !id
+        ? state.sessions
+        : [{ id, title: "New session", updatedAt: Date.now(), turnCount: 0 }],
+  };
+  return syncShared(opened, shared);
+}
+
+function parseJson<T>(text: string): T | null {
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
+
+function textOf(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((part) => (part && typeof part.text === "string" ? part.text : "")).join("");
+  }
+  return "";
+}
+
+/** Did the run in flight belong to a turn (rather than a session opening)? */
+function runTurn(state: AppState): string | null {
+  const run = state.openRun;
+  return run && state.turns.some((turn) => turn.id === run) ? run : null;
+}
+
+export function applyAgUiEvent(state: AppState, event: AGUIEvent): AppState {
   switch (event.type) {
-    case "session.ready":
-      return {
-        ...state,
-        corpus: event.corpus,
-        connection: "open",
-        lastError: null,
-        activeSessionId: state.activeSessionId ?? event.sessionId,
-        sessions:
-          state.sessions.length > 0
-            ? state.sessions
-            : [{ id: event.sessionId, title: "New session", updatedAt: Date.now(), turnCount: 0 }],
-      };
+    case EventType.RUN_STARTED:
+      return { ...state, openRun: event.runId };
 
-    case "turn.start": {
-      if (state.turns.some((turn) => turn.id === event.turnId)) return state;
-      return { ...state, phase: "active", turns: [...state.turns, createTurn(event.turnId)] };
+    case EventType.STATE_SNAPSHOT:
+      return openSession(state, event.snapshot as SharedState);
+
+    case EventType.STATE_DELTA: {
+      if (!state.shared) return state;
+      const delta = event.delta as Operation[];
+      try {
+        const shared = applyPatch(state.shared, delta, false, false).newDocument;
+        return syncShared(state, shared, touchedTurns(delta));
+      } catch (error) {
+        // A patch that does not apply means our copy drifted; say so rather than render a lie.
+        return {
+          ...state,
+          lastError: { code: "state_out_of_sync", message: `A state update did not apply: ${String(error)}` },
+        };
+      }
     }
 
-    case "transcript.chunk": {
-      const next = withTurn(state, event.turnId, (turn) => ({
-        ...turn,
-        transcript: [...turn.transcript, { text: event.text, atMs: event.atMs }],
-      }));
-      return touchSession({ ...next, phase: "active" }, event.text);
+    case EventType.STEP_STARTED: {
+      const turnId = runTurn(state);
+      const status = STEP_STATUS[event.stepName as PipelineStep];
+      if (!turnId || !status) return state;
+      return withTurn(state, turnId, (turn) => ({ ...turn, status }));
     }
 
-    case "controller.decision":
-      return withTurn(state, event.turnId, (turn) => ({
-        ...turn,
-        decisions: [
-          ...turn.decisions,
-          {
-            decision: event.decision,
-            reason: event.reason,
-            atMs: event.atMs,
-            ...(event.confidence === undefined ? {} : { confidence: event.confidence }),
-          },
-        ],
-        status: event.decision === "retrieve" ? "retrieving" : turn.status,
-      }));
+    case EventType.TOOL_CALL_START: {
+      const turnId = runTurn(state);
+      if (!turnId) return state;
+      return { ...state, calls: { ...state.calls, [event.toolCallId]: { turnId, args: "" } } };
+    }
 
-    case "retrieval.started":
-      return withTurn(state, event.turnId, (turn) => ({
+    case EventType.TOOL_CALL_ARGS: {
+      const call = state.calls[event.toolCallId];
+      if (!call) return state;
+      return { ...state, calls: { ...state.calls, [event.toolCallId]: { ...call, args: call.args + event.delta } } };
+    }
+
+    case EventType.TOOL_CALL_END: {
+      const call = state.calls[event.toolCallId];
+      if (!call) return state;
+      const args = parseJson<SearchArgs>(call.args);
+      // Reused calls answer from a search already on the timeline; they add no marker of their own.
+      if (!args || !("trigger" in args)) return state;
+      return withTurn(state, call.turnId, (turn) => ({
         ...turn,
-        retrievals: [
-          ...turn.retrievals,
-          { subQueryId: event.subQueryId, trigger: event.trigger, atMs: event.atMs },
-        ],
+        retrievals: [...turn.retrievals, { subQueryId: event.toolCallId, trigger: args.trigger, atMs: args.atMs }],
         firstRetrievalMs:
-          turn.firstRetrievalMs === null ? event.atMs : Math.min(turn.firstRetrievalMs, event.atMs),
-        status: "retrieving",
+          turn.firstRetrievalMs === null ? args.atMs : Math.min(turn.firstRetrievalMs, args.atMs),
+        status: turn.status === "listening" ? "retrieving" : turn.status,
       }));
+    }
 
-    case "retrieval.cancelled":
-      return withTurn(state, event.turnId, (turn) => ({
-        ...turn,
-        retrievals: turn.retrievals.map((record) =>
-          record.subQueryId === event.subQueryId && record.cancelledReason === undefined
-            ? { ...record, cancelledReason: event.reason }
-            : record,
-        ),
-      }));
-
-    case "utterance.end":
-      return withTurn(state, event.turnId, (turn) => ({ ...turn, utteranceEndMs: event.atMs }));
-
-    case "subqueries":
-      return withTurn(state, event.turnId, (turn) => ({
-        ...turn,
-        subQueries: event.items.map((item) => {
-          const prior = turn.subQueries.find((candidate) => candidate.id === item.id);
-          return { ...item, ...(prior ? { candidates: prior.candidates, keptCount: prior.keptCount } : {}) };
-        }),
-      }));
-
-    case "retrieval.result":
-      return withTurn(state, event.turnId, (turn) => {
-        const known = turn.subQueries.some((sub) => sub.id === event.subQueryId);
-        const stats = { candidates: event.candidates, keptCount: event.kept.length };
+    case EventType.TOOL_CALL_RESULT: {
+      const call = state.calls[event.toolCallId];
+      const result = parseJson<SearchResult>(textOf(event.content));
+      if (!call || !result) return state;
+      if ("cancelled" in result) {
+        return withTurn(state, call.turnId, (turn) => ({
+          ...turn,
+          retrievals: turn.retrievals.map((record) =>
+            record.subQueryId === event.toolCallId && record.cancelledReason === undefined
+              ? { ...record, cancelledReason: result.reason }
+              : record,
+          ),
+        }));
+      }
+      return withTurn(state, call.turnId, (turn) => {
+        const known = turn.subQueries.some((sub) => sub.id === event.toolCallId);
+        const stats = { candidates: result.candidates, keptCount: result.kept.length };
         return {
           ...turn,
           subQueries: known
-            ? turn.subQueries.map((sub) => (sub.id === event.subQueryId ? { ...sub, ...stats } : sub))
+            ? turn.subQueries.map((sub) => (sub.id === event.toolCallId ? { ...sub, ...stats } : sub))
             : // Results can land before the decomposer publishes its list.
-              [
-                ...turn.subQueries,
-                { id: event.subQueryId, text: "", source: "provisional" as const, ...stats },
-              ],
-          evidence: mergeEvidence(turn.evidence, event.kept),
+              [...turn.subQueries, { id: event.toolCallId, text: "", source: "provisional" as const, ...stats }],
+          evidence: mergeEvidence(turn.evidence, result.kept),
         };
       });
+    }
 
-    case "fusion.final":
-      return withTurn(state, event.turnId, (turn) => ({
-        ...turn,
-        evidence: mergeEvidence(turn.evidence, event.hits),
-        quotaApplied: event.quotaApplied,
-        fullCorpusSearch: event.fullCorpusSearch,
-      }));
-
-    case "answer.token":
-      return withTurn(state, event.turnId, (turn) => {
-        const updated = withVersion(turn, event.version, (draft) => ({
-          ...draft,
-          body: draft.body + event.text,
-          fullCorpusSearch: turn.fullCorpusSearch,
-        }));
-        return { ...updated, activeVersion: event.version, status: "answering" };
-      });
-
-    case "answer.version":
-      return withTurn(state, event.turnId, (turn) => {
-        const updated = withVersion(turn, event.version, (draft) => ({
-          ...draft,
-          parent: event.parent,
-          claims: event.claims,
-          preserved: event.preserved,
-          mutated: event.mutated,
-          uncertainty: event.uncertainty,
-          citationSupportRate: event.citationSupportRate,
-          fabricatedCitations: event.fabricatedCitations,
-          fullCorpusSearch: turn.fullCorpusSearch,
-          complete: true,
-        }));
-        // The newest version is what the reader should be looking at.
-        return { ...updated, activeVersion: event.version };
-      });
-
-    case "turn.complete":
-      return withTurn(state, event.turnId, (turn) => ({
-        ...turn,
-        latencyMs: event.latencyMs,
-        cost: event.cost,
-        status: "complete",
-      }));
-
-    case "error": {
-      const withError = { ...state, lastError: { code: event.code, message: event.message } };
-      if (!event.turnId) return withError;
-      return withTurn(withError, event.turnId, (turn) => ({
-        ...turn,
-        status: "error",
-        errorMessage: event.message,
+    case EventType.TEXT_MESSAGE_START: {
+      const id = parseMessageId(event.messageId);
+      if (!id) return state;
+      return withTurn(state, id.turnId, (turn) => ({
+        ...withVersion(turn, id.version, (draft) => draft),
+        activeVersion: id.version,
+        status: "answering",
       }));
     }
 
-    default: {
-      const unhandled: never = event;
-      console.warn("[store] unhandled server event", unhandled);
+    case EventType.TEXT_MESSAGE_CONTENT: {
+      const id = parseMessageId(event.messageId);
+      if (!id) return state;
+      return withTurn(state, id.turnId, (turn) =>
+        withVersion(turn, id.version, (draft) => ({ ...draft, body: draft.body + event.delta })),
+      );
+    }
+
+    case EventType.RUN_FINISHED: {
+      const turnId = runTurn(state);
+      const closed = { ...state, openRun: null };
+      if (!turnId) return closed;
+      return withTurn(closed, turnId, (turn) => ({
+        ...turn,
+        status: turn.status === "error" ? "error" : "complete",
+      }));
+    }
+
+    case EventType.RUN_ERROR: {
+      const turnId = runTurn(state);
+      const failed: AppState = {
+        ...state,
+        openRun: null,
+        lastError: { code: event.code ?? "run_error", message: event.message },
+      };
+      if (!turnId) return failed;
+      return withTurn(failed, turnId, (turn) => ({ ...turn, status: "error", errorMessage: event.message }));
+    }
+
+    default:
       return state;
-    }
   }
 }

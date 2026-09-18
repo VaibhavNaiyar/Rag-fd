@@ -2,10 +2,9 @@
   "name": "samsung-live-rag-web",
   "version": "0.1.0",
   "private": true,
-  "description": "Streaming Live RAG \u2014 operator console. Samsung PRISM GenAI Hackathon, Theme 04.",
+  "description": "Streaming Live RAG — operator console. Samsung PRISM GenAI Hackathon, Theme 04.",
   "scripts": {
     "dev": "next dev",
-    "dev:mock": "cross-env NEXT_PUBLIC_TRANSPORT=mock next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint src",
@@ -15,7 +14,9 @@
     "check": "npm run typecheck && npm run lint && npm run test"
   },
   "dependencies": {
+    "@ag-ui/core": "1.0.0",
     "clsx": "2.1.1",
+    "fast-json-patch": "3.1.1",
     "lucide-react": "0.468.0",
     "next": "^16.3.5",
     "react": "19.0.0",
@@ -23,6 +24,7 @@
     "react-markdown": "9.0.1",
     "remark-gfm": "4.0.0",
     "tailwind-merge": "2.6.0",
+    "zod": "4.6.5",
     "zustand": "5.0.3"
   },
   "devDependencies": {
@@ -30,7 +32,6 @@
     "@types/react": "19.0.7",
     "@types/react-dom": "19.0.3",
     "autoprefixer": "10.4.20",
-    "cross-env": "7.0.3",
     "eslint": "9.18.0",
     "eslint-config-next": "^16.3.5",
     "postcss": "8.4.49",

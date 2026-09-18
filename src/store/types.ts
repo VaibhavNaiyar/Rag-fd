@@ -7,6 +7,7 @@ import type {
   Hit,
   LatencyBreakdown,
   RetrievalTrigger,
+  SharedState,
   SubQuerySource,
 } from "@/types/events";
 
@@ -105,6 +106,13 @@ export interface AppState {
   /* — engine — */
   corpus: CorpusInfo | null;
   connection: ConnectionStatus;
-  transportKind: "websocket" | "mock";
   lastError: { code: string; message: string } | null;
+
+  /* — AG-UI bookkeeping — */
+  /** The engine's shared state, exactly as its STATE_SNAPSHOT/STATE_DELTA stream built it. */
+  shared: SharedState | null;
+  /** The run in flight; its id is the turn id. */
+  openRun: string | null;
+  /** `corpus_search` calls whose arguments are still streaming, by tool call id. */
+  calls: Record<string, { turnId: string; args: string }>;
 }
