@@ -4,8 +4,8 @@ import { ArrowUp, Radio, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconButton } from "@/components/ui/IconButton";
 import { cn } from "@/lib/cn";
-import { DEMO_FIXTURES } from "@/lib/constants";
 import { withViewTransition } from "@/lib/viewTransition";
+import { featuredFixtures } from "@/store/selectors";
 import { useAppStore } from "@/store/useAppStore";
 
 const MAX_TEXTAREA_PX = 200;
@@ -20,6 +20,7 @@ export function Composer() {
   const sendUtterance = useAppStore((state) => state.sendUtterance);
   const stopStreaming = useAppStore((state) => state.stopStreaming);
   const replayFixture = useAppStore((state) => state.replayFixture);
+  const fixtures = useAppStore((state) => state.fixtures);
 
   // Grow with the content, then scroll — no layout jump mid-sentence.
   useEffect(() => {
@@ -40,7 +41,7 @@ export function Composer() {
   }, [isListening, phase, sendUtterance, value]);
 
   const disabled = connection === "closed";
-  const firstFixture = DEMO_FIXTURES[0];
+  const firstFixture = featuredFixtures(fixtures)[0];
 
   return (
     <div className="composer-shell pb-4 pt-1">
@@ -55,11 +56,11 @@ export function Composer() {
         <IconButton
           size="sm"
           label={
-            firstFixture ? `Replay transcript — ${firstFixture.label}` : "Replay transcript"
+            firstFixture ? `Replay transcript: ${firstFixture.label}` : "Replay transcript"
           }
           icon={<Radio size={16} aria-hidden />}
           disabled={disabled || isListening}
-          onClick={() => firstFixture && replayFixture(firstFixture.id)}
+          onClick={() => firstFixture && replayFixture(firstFixture.fixture.id)}
           className="mb-0.5"
         />
 
@@ -80,7 +81,11 @@ export function Composer() {
             }
           }}
           placeholder={
-            isListening ? "Streaming your utterance…" : "Ask one natural request — it can hide several questions."
+            disabled
+              ? "Waiting for the engine: start the backend on port 8000 and this connects by itself."
+              : isListening
+                ? "Streaming your utterance…"
+                : "Ask one natural request. It can hide several questions."
           }
           className={cn(
             "scroll-thin max-h-[200px] min-h-[24px] flex-1 resize-none bg-transparent",
@@ -112,11 +117,6 @@ export function Composer() {
           </button>
         )}
       </div>
-
-      <p className="mt-1.5 text-center text-caption text-ink-muted">
-        Typed input is streamed as timed chunks, so the controller sees the same partial utterance
-        it would from speech.
-      </p>
     </div>
   );
 }

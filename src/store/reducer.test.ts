@@ -13,10 +13,10 @@ const EMPTY: AppState = {
   phase: "idle",
   isListening: false,
   draftTranscript: "",
-  traceOpen: true,
   sidebarOpen: true,
   hoveredChunkId: null,
   corpus: null,
+  fixtures: [],
   connection: "connecting",
   lastError: null,
   shared: null,
@@ -266,6 +266,22 @@ describe("applyAgUiEvent", () => {
       patch("t1", "add", "transcript/-", { text: "how does fusion work", atMs: 100 }),
     ]);
     expect(state.sessions[0]?.title).toBe("how does fusion work");
+  });
+
+  it("carries the readings to choose between when nothing was verified", () => {
+    const state = play([
+      ...opening(),
+      ...turnStart("t1"),
+      patch("t1", "add", "versions/1", { ...VERSION, clarification: ["Fallout 4 setting", "Fallout 76 setting"] }),
+    ]);
+    const turn = state.turns[0];
+    expect(turn && selectVersion(turn, 1)?.clarification).toEqual(["Fallout 4 setting", "Fallout 76 setting"]);
+  });
+
+  it("asks nothing when the engine sent no clarification", () => {
+    const state = play([...opening(), ...turnStart("t1"), patch("t1", "add", "versions/1", VERSION)]);
+    const turn = state.turns[0];
+    expect(turn && selectVersion(turn, 1)?.clarification).toEqual([]);
   });
 
   it("flags a patch that does not apply instead of rendering drifted state", () => {

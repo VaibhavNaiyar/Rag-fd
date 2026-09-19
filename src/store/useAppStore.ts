@@ -2,11 +2,12 @@
 
 import { create } from "zustand";
 import { streamUtterance, type UtteranceStreamHandle } from "@/lib/chunker";
+import { apiUrl } from "@/lib/endpoints";
 import { createTransport, type Transport } from "@/lib/transport";
 import { applyAgUiEvent } from "@/store/reducer";
 import { createTokenBatcher, type TokenBatcher } from "@/store/tokenBatcher";
 import type { AppState } from "@/store/types";
-import type { ClientEvent } from "@/types/events";
+import type { ClientEvent, FixtureInfo } from "@/types/events";
 
 interface AppActions {
   /** Open the engine connection. Safe to call twice; the second call is a no-op. */
@@ -22,7 +23,6 @@ interface AppActions {
 
   setActiveVersion: (turnId: string, version: number) => void;
   setHoveredChunk: (chunkId: string | null) => void;
-  toggleTrace: (open?: boolean) => void;
   toggleSidebar: (open?: boolean) => void;
   dismissError: () => void;
 }
@@ -36,10 +36,10 @@ const INITIAL_STATE: AppState = {
   phase: "idle",
   isListening: false,
   draftTranscript: "",
-  traceOpen: true,
   sidebarOpen: true,
   hoveredChunkId: null,
   corpus: null,
+  fixtures: [],
   connection: "connecting",
   lastError: null,
   shared: null,
@@ -58,6 +58,17 @@ let utterance: UtteranceStreamHandle | null = null;
 export const useAppStore = create<AppStore>()((set, get) => {
   const emit = (event: ClientEvent) => transport?.send(event);
 
+  const loadFixtures = async () => {
+    try {
+      const response = await fetch(apiUrl("/fixtures"));
+      if (!response.ok) return;
+      const body = (await response.json()) as { fixtures?: FixtureInfo[] };
+      set({ fixtures: body.fixtures ?? [] });
+    } catch {
+      // No list means no suggestion chips; typing still works.
+    }
+  };
+
   return {
     ...INITIAL_STATE,
 
@@ -66,7 +77,11 @@ export const useAppStore = create<AppStore>()((set, get) => {
       batcher = createTokenBatcher((event) => set((state) => applyAgUiEvent(state, event)));
       transport = createTransport({
         onEvent: (event) => batcher?.push(event),
-        onStatus: (connection) => set({ connection }),
+        onStatus: (connection) => {
+          set({ connection });
+          // The engine may have restarted on another corpus; fetch its test cases once it answers.
+          if (connection === "open" && get().fixtures.length === 0) void loadFixtures();
+        },
       });
       transport.connect();
     },
@@ -141,7 +156,6 @@ export const useAppStore = create<AppStore>()((set, get) => {
       })),
 
     setHoveredChunk: (hoveredChunkId) => set({ hoveredChunkId }),
-    toggleTrace: (open) => set((state) => ({ traceOpen: open ?? !state.traceOpen })),
     toggleSidebar: (open) => set((state) => ({ sidebarOpen: open ?? !state.sidebarOpen })),
     dismissError: () => set({ lastError: null }),
   };

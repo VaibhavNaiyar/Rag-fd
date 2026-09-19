@@ -6,7 +6,7 @@ import { TYPED_CHUNK_WORDS, TYPED_STREAM_WPM } from "@/lib/constants";
  * Typed input is never sent as one blob. It is broken into 3–5 word groups and
  * released at speaking pace, so the engine's streaming path — controller,
  * provisional retrieval, decomposition — runs identically whether the input was
- * typed, replayed or spoken. Without this, a live demo silently bypasses the
+ * typed, replayed or spoken. Without this, a live session silently bypasses the
  * controller and G2 becomes unobservable.
  */
 
@@ -46,7 +46,7 @@ export function chunkUtterance(text: string, wpm: number = TYPED_STREAM_WPM): Ti
 
 export interface UtteranceStreamOptions {
   text: string;
-  /** 1 = speaking pace. Higher is faster; the demo bar drives this. */
+  /** 1 = speaking pace. Higher is faster; the replay bar drives this. */
   speed?: number;
   onChunk: (chunk: TimedChunk, index: number) => void;
   onEnd: () => void;

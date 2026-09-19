@@ -15,7 +15,7 @@ import type { Turn } from "@/store/types";
  */
 export function SubQueryList({ turn }: { turn: Turn }) {
   if (turn.subQueries.length === 0) {
-    return <EmptyHint>No decomposition yet — the controller has not committed to a search.</EmptyHint>;
+    return <EmptyHint>No decomposition yet. The controller has not committed to a search.</EmptyHint>;
   }
 
   return (

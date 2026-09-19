@@ -38,7 +38,7 @@ function usePlot(turn: Turn, width: number): Plot {
       turn.utteranceEndMs ?? 0,
     ];
     // While the utterance is still open the domain grows with it; once it closes
-    // it is pinned, so markers stop sliding around mid-demo.
+    // it is pinned, so markers stop sliding around mid-session.
     const domainEnd = Math.max(600, ...events) * (turn.utteranceEndMs === null ? 1.15 : 1.06);
     const usable = Math.max(1, width - PAD_X * 2);
 

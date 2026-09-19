@@ -1,48 +1,33 @@
 "use client";
 
 import { ArrowUpRight } from "lucide-react";
+import { FixtureBrowser } from "@/components/chat/FixtureBrowser";
 import { cn } from "@/lib/cn";
-import { DEMO_FIXTURES } from "@/lib/constants";
-import { formatCount, formatRelative } from "@/lib/format";
+import { featuredFixtures } from "@/store/selectors";
 import { useAppStore } from "@/store/useAppStore";
 
 /**
  * The IDLE state.
  *
- * The corpus sub-line quietly tells a judge the system ingested something real,
- * and the suggestion chips are the same four fixtures the demo bar fires — so an
- * unscripted judge clicking around still lands on the behaviours that matter.
+ * One line, then the suggestion chips. The chips are the same four fixtures the
+ * replay bar fires, so an unscripted judge clicking around still lands on the
+ * behaviours that matter. Corpus size lives in the sidebar footer.
  */
 export function Greeting() {
-  const corpus = useAppStore((state) => state.corpus);
   const replayFixture = useAppStore((state) => state.replayFixture);
+  const featured = featuredFixtures(useAppStore((state) => state.fixtures));
 
   return (
     <div className="animate-message-in pb-8 text-center">
       <h1 className="text-display text-ink">Ask me anything about the corpus.</h1>
 
-      <p className="mt-2 font-mono text-caption tabular text-ink-muted">
-        {corpus ? (
-          <>
-            {formatCount(corpus.chunks)} chunks across {formatCount(corpus.docs)} documents
-            {corpus.indexedAt !== undefined && <> · indexed {formatRelative(corpus.indexedAt)}</>}
-          </>
-        ) : (
-          "Waiting for the engine to report its index…"
-        )}
-      </p>
-
-      <p className="mx-auto mt-4 max-w-lg text-body text-ink-muted">
-        Speak one natural request. Retrieval starts before you finish, compound requests split
-        themselves, and a detail added mid-flow sharpens the answer instead of restarting it.
-      </p>
-
       <ul className="mx-auto mt-7 grid max-w-2xl gap-2 sm:grid-cols-2">
-        {DEMO_FIXTURES.map((fixture) => (
+        {featured.map(({ fixture, label, proves }) => (
           <li key={fixture.id}>
             <button
               type="button"
               onClick={() => replayFixture(fixture.id)}
+              title={fixture.turns.join(" / ")}
               className={cn(
                 "group flex h-full w-full flex-col items-start gap-1 rounded-md border border-line",
                 "bg-raised px-3.5 py-3 text-left shadow-card",
@@ -51,18 +36,21 @@ export function Greeting() {
               )}
             >
               <span className="flex w-full items-center gap-2">
-                <span className="text-label text-ink">{fixture.label}</span>
+                <span className="text-label text-ink">{label}</span>
                 <ArrowUpRight
                   size={14}
                   aria-hidden
                   className="ml-auto shrink-0 text-ink-muted transition-colors group-hover:text-primary-ink"
                 />
               </span>
-              <span className="text-caption text-ink-muted">{fixture.proves}</span>
+              <span className="line-clamp-2 text-caption text-ink">“{fixture.turns[0]}”</span>
+              <span className="text-caption text-ink-muted">{proves}</span>
             </button>
           </li>
         ))}
       </ul>
+
+      <FixtureBrowser />
     </div>
   );
 }

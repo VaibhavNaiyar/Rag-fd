@@ -92,6 +92,7 @@ function withVersion(
     uncertainty: [],
     citationSupportRate: 0,
     fabricatedCitations: 0,
+    clarification: [],
     fullCorpusSearch: turn.fullCorpusSearch,
     complete: false,
   };
@@ -276,7 +277,10 @@ export function applyAgUiEvent(state: AppState, event: AGUIEvent): AppState {
       if (!args || !("trigger" in args)) return state;
       return withTurn(state, call.turnId, (turn) => ({
         ...turn,
-        retrievals: [...turn.retrievals, { subQueryId: event.toolCallId, trigger: args.trigger, atMs: args.atMs }],
+        retrievals: [
+          ...turn.retrievals,
+          { subQueryId: event.toolCallId, query: args.query, trigger: args.trigger, atMs: args.atMs },
+        ],
         firstRetrievalMs:
           turn.firstRetrievalMs === null ? args.atMs : Math.min(turn.firstRetrievalMs, args.atMs),
         status: turn.status === "listening" ? "retrieving" : turn.status,

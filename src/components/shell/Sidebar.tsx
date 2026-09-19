@@ -1,7 +1,8 @@
 "use client";
 
-import { Database, Monitor, Moon, PenSquare, Sun } from "lucide-react";
+import { Activity, ChevronDown, Database, Monitor, Moon, PanelLeft, PenSquare, Sun } from "lucide-react";
 import { SessionItem } from "@/components/shell/SessionItem";
+import { SessionRollup } from "@/components/trace/SessionRollup";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
 import { useTheme, type ThemePreference } from "@/hooks/useTheme";
@@ -25,7 +26,9 @@ export function Sidebar({ className }: { className?: string }) {
   const sessions = useAppStore((state) => state.sessions);
   const activeSessionId = useAppStore((state) => state.activeSessionId);
   const corpus = useAppStore((state) => state.corpus);
+  const turnCount = useAppStore((state) => state.turns.length);
   const newSession = useAppStore((state) => state.newSession);
+  const toggleSidebar = useAppStore((state) => state.toggleSidebar);
   const { theme, cycleTheme } = useTheme();
 
   const ThemeIcon = THEME_ICONS[theme];
@@ -46,6 +49,13 @@ export function Sidebar({ className }: { className?: string }) {
           />
           <span className="truncate text-label font-semibold text-ink">Streaming Live RAG</span>
         </div>
+        {/* Closing lives with the thing it closes; reopening lives in the top bar. */}
+        <IconButton
+          size="sm"
+          label="Hide sessions"
+          icon={<PanelLeft size={16} aria-hidden />}
+          onClick={() => toggleSidebar(false)}
+        />
       </div>
 
       <div className="px-3 pb-3">
@@ -67,7 +77,7 @@ export function Sidebar({ className }: { className?: string }) {
         </h2>
         {sessions.length === 0 ? (
           <p className="px-1.5 py-2 text-caption text-ink-muted">
-            Session memory only — nothing is kept once the engine restarts.
+            Session memory only. Nothing is kept once the engine restarts.
           </p>
         ) : (
           <ul className="space-y-0.5 pb-2">
@@ -83,6 +93,18 @@ export function Sidebar({ className }: { className?: string }) {
       </nav>
 
       <footer className="border-t border-line px-3 py-3">
+        {turnCount > 0 && (
+          <details className="group/rollup mb-3">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-caption font-semibold uppercase tracking-wide text-ink-muted hover:text-ink [&::-webkit-details-marker]:hidden">
+              <Activity size={13} aria-hidden />
+              Session telemetry
+              <ChevronDown size={13} aria-hidden className="ml-auto transition-transform group-open/rollup:rotate-180" />
+            </summary>
+            <div className="mt-2.5">
+              <SessionRollup />
+            </div>
+          </details>
+        )}
         <div className="mb-2 flex items-start gap-2">
           <Database size={14} aria-hidden className="mt-0.5 shrink-0 text-ink-muted" />
           <div className="min-w-0 text-caption text-ink-muted">

@@ -28,7 +28,7 @@ export function CitationChip({ marker, hit }: CitationChipProps) {
     return (
       <span
         className="mx-0.5 inline-flex items-center gap-1 rounded-sm border border-edge-error bg-error-soft px-1.5 py-px align-baseline font-mono text-[11px] text-error"
-        title="Unverified citation — no retrieved chunk carries this marker."
+        title="Unverified citation. No retrieved chunk carries this marker."
       >
         <AlertTriangle size={11} aria-hidden />
         {marker}
@@ -46,7 +46,7 @@ export function CitationChip({ marker, hit }: CitationChipProps) {
       onMouseLeave={() => setHoveredChunk(null)}
       onFocus={() => setHoveredChunk(hit.chunkId)}
       onBlur={() => setHoveredChunk(null)}
-      title={`${hit.docId} §${hit.section} — ${hit.chunkId}`}
+      title={`${hit.docId} §${hit.section} (${hit.chunkId})`}
       className={cn(
         "mx-0.5 inline-flex items-baseline rounded-sm border px-1.5 py-px align-baseline",
         "font-mono text-[11px] transition-colors duration-150 ease-oneui",

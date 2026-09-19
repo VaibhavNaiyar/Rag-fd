@@ -9,7 +9,7 @@ const NEAR_BOTTOM_PX = 64;
  *
  * The list follows new tokens only while the viewer is already at the bottom.
  * Scroll up to inspect an earlier turn and the stream stops yanking the view
- * away — which matters during a demo when someone reads a citation mid-answer.
+ * away — which matters during a live session when someone reads a citation mid-answer.
  */
 export function useStickToBottom<T extends HTMLElement>(dependency: unknown): {
   ref: React.RefObject<T | null>;

@@ -26,7 +26,7 @@ function isTextEntry(target: EventTarget | null): boolean {
  * Global keyboard bindings.
  *
  * Handlers are held in a ref so a re-render never detaches and reattaches the
- * listener — during a demo that would drop a keystroke mid-token-stream.
+ * listener — during a live session that would drop a keystroke mid-token-stream.
  */
 export function useHotkeys(hotkeys: Hotkey[]): void {
   const ref = useRef(hotkeys);

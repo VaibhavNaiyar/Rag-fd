@@ -4,6 +4,7 @@ import type {
   CorpusInfo,
   CostBreakdown,
   Decision,
+  FixtureInfo,
   Hit,
   LatencyBreakdown,
   RetrievalTrigger,
@@ -25,6 +26,8 @@ export interface AnswerVersion {
   uncertainty: string[];
   citationSupportRate: number;
   fabricatedCitations: number;
+  /** Readings to choose between, when the request was split and none could be verified. */
+  clarification: string[];
   /** false on a refinement — the G5 proof, read straight off `fusion.final`. */
   fullCorpusSearch: boolean;
   complete: boolean;
@@ -39,6 +42,8 @@ export interface ControllerDecisionRecord {
 
 export interface RetrievalRecord {
   subQueryId: string;
+  /** What was searched, from the `corpus_search` call's arguments. */
+  query: string;
   trigger: RetrievalTrigger;
   atMs: number;
   /** Set when the thrash guard kills an in-flight search. */
@@ -98,13 +103,14 @@ export interface AppState {
   draftTranscript: string;
 
   /* — chrome — */
-  traceOpen: boolean;
   sidebarOpen: boolean;
-  /** Drives the bidirectional chat <-> trace highlight. */
+  /** Drives the bidirectional highlight between citation chips and evidence cards. */
   hoveredChunkId: string | null;
 
   /* — engine — */
   corpus: CorpusInfo | null;
+  /** Replayable test cases for the corpus the engine is serving (`GET /fixtures`). */
+  fixtures: FixtureInfo[];
   connection: ConnectionStatus;
   lastError: { code: string; message: string } | null;
 

@@ -3,13 +3,14 @@
 import { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { SuppressedNote } from "@/components/chat/SuppressedNote";
+import { ActivityLog } from "@/components/chat/ActivityLog";
+import { ClarifyPrompt } from "@/components/chat/ClarifyPrompt";
 import { UncertaintyNote } from "@/components/chat/UncertaintyNote";
 import { VersionPills } from "@/components/chat/VersionPills";
 import { Pill } from "@/components/ui/Pill";
 import { createCitationRenderers } from "@/lib/citations";
 import { formatMs, formatRate } from "@/lib/format";
-import { isSuppressed, selectVersion } from "@/store/selectors";
+import { selectVersion } from "@/store/selectors";
 import type { Turn } from "@/store/types";
 import { useAppStore } from "@/store/useAppStore";
 
@@ -25,7 +26,7 @@ function RefinementLine({ turn, version }: { turn: Turn; version: number }) {
 
   return (
     <p className="mt-3 border-t border-line pt-2.5 text-caption text-ink-muted">
-      Refined from v{current.parent} — {preserved} {preserved === 1 ? "claim" : "claims"} preserved,{" "}
+      Refined from v{current.parent}: {preserved} {preserved === 1 ? "claim" : "claims"} preserved,{" "}
       {mutated} updated,{" "}
       <span className={current.fullCorpusSearch ? undefined : "font-medium text-[var(--ok-ink)]"}>
         {current.fullCorpusSearch ? "full-corpus search re-run" : "no full-corpus search"}
@@ -35,35 +36,17 @@ function RefinementLine({ turn, version }: { turn: Turn; version: number }) {
   );
 }
 
-function ThinkingIndicator({ label }: { label: string }) {
-  return (
-    <p className="shimmer-ai animate-shimmer text-body font-medium" aria-live="polite">
-      {label}
-    </p>
-  );
-}
-
 export function AssistantMessage({ turn }: { turn: Turn }) {
   const setActiveVersion = useAppStore((state) => state.setActiveVersion);
 
   const version = selectVersion(turn);
-  const suppressed = isSuppressed(turn);
-  const suppressReason =
-    turn.decisions.find((decision) => decision.decision === "suppress")?.reason ?? "";
 
   // Rebuilt only when the evidence set changes, so streaming tokens stay cheap.
   const renderers = useMemo(() => createCitationRenderers(turn.evidence), [turn.evidence]);
 
-  const waitingLabel =
-    turn.status === "retrieving"
-      ? "Retrieving across sub-queries…"
-      : turn.status === "listening"
-        ? "Listening…"
-        : "Composing the answer…";
-
   return (
     <div className="animate-message-in">
-      {suppressed && <SuppressedNote reason={suppressReason} />}
+      <ActivityLog turn={turn} />
 
       {turn.status === "error" ? (
         <p className="rounded-md border border-edge-error bg-error-soft px-3.5 py-3 text-body text-error">
@@ -75,11 +58,10 @@ export function AssistantMessage({ turn }: { turn: Turn }) {
             {version.body}
           </ReactMarkdown>
         </div>
-      ) : (
-        <ThinkingIndicator label={waitingLabel} />
-      )}
+      ) : null}
 
       {version && <UncertaintyNote items={version.uncertainty} />}
+      {version && <ClarifyPrompt options={version.clarification} />}
       {version && <RefinementLine turn={turn} version={version.version} />}
 
       {(turn.versions.length > 1 || turn.status === "complete") && (

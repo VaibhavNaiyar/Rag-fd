@@ -37,33 +37,22 @@
 }
 
 @layer components {
-  /* The shell owns the only grid in the app. The trace rail animates its own
-     column, so opening it never reflows the sidebar. */
+  /* The shell owns the only grid in the app: sessions, then the conversation.
+     What the engine did on a turn is shown inline, above that turn's answer. */
   .app-shell {
     display: grid;
-    grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--trace-w);
+    grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
     height: 100dvh;
     overflow: hidden;
     transition: grid-template-columns 280ms var(--ease-oneui);
-  }
-
-  [data-trace="open"] {
-    --trace-w: 380px;
   }
 
   [data-sidebar="closed"] {
     --sidebar-w: 0px;
   }
 
-  /* Below 1280px the rail stops being a column and becomes an overlay drawer;
-     below 768px the sidebar does the same. The grid collapses to one column so
-     the chat keeps the full width underneath. */
-  @media (max-width: 1279px) {
-    [data-trace="open"] {
-      --trace-w: 0px;
-    }
-  }
-
+  /* Below 768px the sidebar becomes an overlay drawer and the grid collapses to
+     one column, so the chat keeps the full width underneath. */
   @media (max-width: 767px) {
     [data-sidebar="open"] {
       --sidebar-w: 0px;

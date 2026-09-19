@@ -17,7 +17,7 @@ export function ErrorBanner() {
     >
       <AlertCircle size={14} aria-hidden className="shrink-0" />
       <span className="min-w-0 flex-1">
-        <span className="font-mono">{lastError.code}</span> — {lastError.message}
+        <span className="font-mono">{lastError.code}:</span> {lastError.message}
       </span>
       <IconButton
         size="sm"

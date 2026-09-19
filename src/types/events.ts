@@ -101,6 +101,8 @@ export interface VersionRecord {
   uncertainty: string[];
   citationSupportRate: number;
   fabricatedCitations: number;
+  /** Readings to choose between, when the request was split and none could be verified. */
+  clarification?: string[];
 }
 
 export interface SharedTurn {
@@ -147,6 +149,16 @@ export type ClientEvent =
   | { type: "utterance.start" }
   | { type: "utterance.chunk"; text: string }
   | { type: "utterance.end" }
-  /** Demo mode. Payloads live in `evals/fixtures/` server-side, never here. */
+  /** Replay mode. Payloads live in `evals/fixtures/` server-side, never here. */
   | { type: "replay"; fixture: string; speed?: number }
   | { type: "session.new" };
+
+/** One replayable test case, as `GET /fixtures` lists it for the corpus being served. */
+export interface FixtureInfo {
+  id: string;
+  /** The folder it lives in: compound, late_detail, suppression, single, unanswerable. */
+  family: string;
+  description: string;
+  /** What is said, turn by turn. */
+  turns: string[];
+}

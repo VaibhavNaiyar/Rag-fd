@@ -1,7 +1,7 @@
 "use client";
 
 import { Stat } from "@/components/ui/Stat";
-import { formatLead, formatMs, formatRate, formatUsd } from "@/lib/format";
+import { EMPTY, formatLead, formatMs, formatRate, formatUsd } from "@/lib/format";
 import { latestVersion, retrievalLeadMs } from "@/store/selectors";
 import type { Turn } from "@/store/types";
 
@@ -21,11 +21,11 @@ export function MetricsBar({ turn }: { turn: Turn }) {
       <div className="grid grid-cols-2 gap-3">
         <Stat
           label="Retrieval lead"
-          value={lead === null ? (suppressed ? "n/a" : "—") : formatLead(lead)}
+          value={lead === null ? EMPTY : formatLead(lead)}
           hint={
             lead === null
               ? suppressed
-                ? "suppressed — no search"
+                ? "suppressed, no search"
                 : "awaiting utterance end"
               : lead > 0
                 ? "before utterance end"

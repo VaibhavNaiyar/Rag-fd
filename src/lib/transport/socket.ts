@@ -1,25 +1,16 @@
 import type { AGUIEvent } from "@ag-ui/core";
 import { EventSchemas } from "@ag-ui/core/schemas";
 import { RECONNECT_BACKOFF_MS } from "@/lib/constants";
+import { streamUrl } from "@/lib/endpoints";
 import type { Transport, TransportHandlers } from "@/lib/transport/types";
 import type { ClientEvent } from "@/types/events";
-
-/** Derive the engine endpoint. Unset env means "same origin", which is what the
- *  single-container deployment relies on. */
-function resolveUrl(): string {
-  const configured = process.env.NEXT_PUBLIC_WS_URL;
-  if (configured) return configured;
-  if (typeof window === "undefined") return "";
-  const scheme = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${scheme}//${window.location.host}/stream`;
-}
 
 /**
  * WebSocket transport with capped exponential backoff.
  *
  * Every frame is checked against AG-UI's own event schemas. One that does not
  * parse, or is not a valid AG-UI event, is dropped with a console warning
- * rather than crashing the stream — a malformed frame mid-demo should cost one
+ * rather than crashing the stream — a malformed frame mid-session should cost one
  * event, not the session.
  */
 export function createWebSocketTransport(handlers: TransportHandlers): Transport {
@@ -47,7 +38,7 @@ export function createWebSocketTransport(handlers: TransportHandlers): Transport
 
   function open() {
     if (disposed) return;
-    const url = resolveUrl();
+    const url = streamUrl();
     if (!url) return;
 
     handlers.onStatus("connecting");

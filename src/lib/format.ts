@@ -1,5 +1,8 @@
 /** Display formatters. Every number a judge reads is rendered through here. */
 
+/** Shown where a value does not exist yet, or does not apply to this turn. */
+export const EMPTY = "n/a";
+
 /** `1,284` — thousands separated, locale-stable so SSR and client agree. */
 export function formatCount(n: number): string {
   return n.toLocaleString("en-US");
@@ -7,20 +10,20 @@ export function formatCount(n: number): string {
 
 /** `840ms` under a second, `2.14s` above it. */
 export function formatMs(ms: number | null | undefined): string {
-  if (ms === null || ms === undefined) return "—";
+  if (ms === null || ms === undefined) return EMPTY;
   if (Math.abs(ms) < 1000) return `${Math.round(ms)}ms`;
   return `${(ms / 1000).toFixed(2)}s`;
 }
 
 /** Signed lead time, e.g. `1,300ms` — always the magnitude, sign is implied by the label. */
 export function formatLead(ms: number | null | undefined): string {
-  if (ms === null || ms === undefined) return "—";
+  if (ms === null || ms === undefined) return EMPTY;
   return `${formatCount(Math.round(Math.abs(ms)))}ms`;
 }
 
 /** Sub-cent costs need four decimals to be meaningful at all. */
 export function formatUsd(usd: number | null | undefined): string {
-  if (usd === null || usd === undefined) return "—";
+  if (usd === null || usd === undefined) return EMPTY;
   if (usd === 0) return "$0.0000";
   if (usd < 0.0001) return "<$0.0001";
   return `$${usd.toFixed(4)}`;
@@ -28,7 +31,7 @@ export function formatUsd(usd: number | null | undefined): string {
 
 /** `92%` — rates arrive as 0–1 from the grounding verifier. */
 export function formatRate(rate: number | null | undefined): string {
-  if (rate === null || rate === undefined) return "—";
+  if (rate === null || rate === undefined) return EMPTY;
   return `${Math.round(rate * 100)}%`;
 }
 

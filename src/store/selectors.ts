@@ -1,5 +1,6 @@
 import type { AnswerVersion, AppState, ControllerDecisionRecord, Turn } from "@/store/types";
-import type { Hit } from "@/types/events";
+import { FIXTURE_FAMILIES } from "@/lib/constants";
+import type { FixtureInfo, Hit } from "@/types/events";
 
 /**
  * Derived reads.
@@ -123,4 +124,27 @@ export function selectSessionMetrics(turns: Turn[]): SessionMetrics {
       0,
     ),
   };
+}
+
+export interface FeaturedFixture {
+  fixture: FixtureInfo;
+  label: string;
+  proves: string;
+  hotkey: string;
+}
+
+/**
+ * One fixture per family, in {@link FIXTURE_FAMILIES} order, at most four: the
+ * replay keys 1–4 and the idle-screen chips. A family whose point needs an earlier
+ * answer (a late detail, a reformat) is represented by a multi-turn case.
+ */
+export function featuredFixtures(fixtures: FixtureInfo[]): FeaturedFixture[] {
+  const featured: FeaturedFixture[] = [];
+  for (const { family, label, proves } of FIXTURE_FAMILIES) {
+    const members = fixtures.filter((fixture) => fixture.family === family);
+    const pick = members.find((fixture) => fixture.turns.length > 1) ?? members[0];
+    if (pick) featured.push({ fixture: pick, label, proves, hotkey: String(featured.length + 1) });
+    if (featured.length === 4) break;
+  }
+  return featured;
 }

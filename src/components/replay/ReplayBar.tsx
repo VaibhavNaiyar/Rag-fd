@@ -5,11 +5,12 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { useHotkeys } from "@/hooks/useHotkeys";
 import { cn } from "@/lib/cn";
-import { DEMO_FIXTURES, REPLAY_SPEEDS } from "@/lib/constants";
+import { REPLAY_SPEEDS } from "@/lib/constants";
+import { featuredFixtures } from "@/store/selectors";
 import { useAppStore } from "@/store/useAppStore";
 
 /**
- * Demo mode, revealed by `?demo=1`.
+ * Replay mode, revealed by `?replay=1`.
  *
  * The video is recorded once, under time pressure, so nothing in a take should
  * require typing. Number keys fire fixtures, R resets. The fixture payloads live
@@ -17,15 +18,17 @@ import { useAppStore } from "@/store/useAppStore";
  * what keeps the no-hardcoding rule intact and means the console replays exactly
  * what the eval harness scores.
  */
-export function DemoBar() {
+export function ReplayBar() {
   const [speed, setSpeed] = useState<number>(1);
   const replayFixture = useAppStore((state) => state.replayFixture);
   const newSession = useAppStore((state) => state.newSession);
+  const fixtures = useAppStore((state) => state.fixtures);
+  const featured = featuredFixtures(fixtures);
 
   useHotkeys([
-    ...DEMO_FIXTURES.map((fixture) => ({
-      key: fixture.hotkey,
-      handler: () => replayFixture(fixture.id, speed),
+    ...featured.map((item) => ({
+      key: item.hotkey,
+      handler: () => replayFixture(item.fixture.id, speed),
     })),
     { key: "r", handler: newSession },
   ]);
@@ -33,28 +36,28 @@ export function DemoBar() {
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-line bg-warn-soft px-3 py-2">
       <span className="text-caption font-semibold uppercase tracking-wide text-warn-ink">
-        Demo
+        Replay
       </span>
 
-      {DEMO_FIXTURES.map((fixture) => (
+      {featured.map((item) => (
         <Button
-          key={fixture.id}
+          key={item.fixture.id}
           variant="outline"
           size="sm"
-          onClick={() => replayFixture(fixture.id, speed)}
-          title={fixture.proves}
+          onClick={() => replayFixture(item.fixture.id, speed)}
+          title={`${item.proves}: ${item.fixture.turns.join(" / ")}`}
         >
-          <kbd className="font-mono text-[10px] text-ink-muted">{fixture.hotkey}</kbd>
-          {fixture.label}
+          <kbd className="font-mono text-[10px] text-ink-muted">{item.hotkey}</kbd>
+          {item.label}
         </Button>
       ))}
 
       <div className="ml-auto flex items-center gap-1.5">
         <Gauge size={14} aria-hidden className="text-warn-ink" />
-        <label className="sr-only" htmlFor="demo-speed">
+        <label className="sr-only" htmlFor="replay-speed">
           Replay speed
         </label>
-        <div id="demo-speed" role="group" aria-label="Replay speed" className="flex gap-0.5">
+        <div id="replay-speed" role="group" aria-label="Replay speed" className="flex gap-0.5">
           {REPLAY_SPEEDS.map((option) => (
             <button
               key={option}

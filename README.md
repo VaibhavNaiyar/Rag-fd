@@ -21,10 +21,10 @@ Where a design decision trades trace legibility for chat polish, trace legibilit
 
 ```bash
 npm install
-npm run dev          # talks to the engine's AG-UI stream at ws://<host>/stream
+npm run dev          # console on :3000, engine expected on :8000 of the same host
 ```
 
-Open <http://localhost:3000>. Add `?demo=1` for the fixture bar.
+Open <http://localhost:3000>. Add `?replay=1` for the replay bar.
 
 ```bash
 npm run check        # typecheck + lint + tests
@@ -35,7 +35,7 @@ npm run build        # static export into ./out
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `NEXT_PUBLIC_WS_URL` | derived from `window.location` | Absolute engine endpoint |
+| `NEXT_PUBLIC_WS_URL` | same origin; `ws://<host>:8000/stream` under `npm run dev` | Absolute engine endpoint. The HTTP API (`/fixtures`) is derived from it |
 
 Leaving `NEXT_PUBLIC_WS_URL` unset is what the single-container deployment relies on.
 
@@ -108,29 +108,40 @@ The most important frontend decision here: pressing Enter does **not** send one 
 
 The engine's streaming path — controller, provisional retrieval, decomposition —
 therefore runs identically whether the input was typed, replayed or spoken. Without
-this, a live demo silently bypasses the controller and **G2 becomes unobservable**.
+this, a live session silently bypasses the controller and **G2 becomes unobservable**.
 
 ---
 
 ## Layout
 
-Three zones in one CSS grid. The trace rail animates its own column, so opening it
-never reflows the sidebar.
+Two zones in one CSS grid: sessions, and the conversation. What the engine did on
+a turn is shown **inline, above that turn's answer**, as an activity list read
+straight off the AG-UI stream:
 
 ```
- 260px                     1fr                      0 ↔ 380px
-┌──────────┬────────────────────────────────┬──────────────────┐
-│ SIDEBAR  │  message list (scrolls)        │  TRACE RAIL      │
-│ sessions │  transcript strip (listening)  │  controller      │
-│ corpus   │  COMPOSER                      │  sub-queries     │
-│ theme    │        max-w-3xl, centered     │  evidence        │
-│          │                                │  versions        │
-│          │                                │  telemetry       │
-└──────────┴────────────────────────────────┴──────────────────┘
+ 260px                     1fr
+┌──────────┬───────────────────────────────────────────────┐
+│ SIDEBAR  │  you:  "…one natural request…"                │
+│ sessions │  Ran 3 searches, read 8 passages ⌄            │
+│ session  │  ┌──────────────────────────────────────────┐ │
+│ telemetry│  │ Listened to 5 chunks, searched 1.3 s     │ │
+│ corpus   │  │   before you finished                  › │ │
+│ theme    │  │ Searched "venue capacity Pune 30"      › │ │
+│          │  │ Split your request into 3 questions    › │ │
+│          │  │ Fused and reranked 8 passages          › │ │
+│          │  │ Wrote the answer: 5 claims, 100% backed› │ │
+│          │  │ Done: first token 0.4 s after you …    › │ │
+│          │  └──────────────────────────────────────────┘ │
+│          │  the answer, with citation chips              │
+│          │  COMPOSER                                     │
+└──────────┴───────────────────────────────────────────────┘
 ```
 
-Below 1280px the rail becomes an overlay drawer; below 768px the sidebar does too.
-**Record at 1920×1080 with both panels open** — that is the layout this is tuned for.
+The list is open while the turn runs and folds to its one-line summary when it is
+done. Every row expands (›) into its evidence: the controller timeline with the
+utterance-end rule, the passages a search kept, the sub-query chips, the fused
+evidence, the v1 → v2 diff, and the turn's telemetry. Below 768px the sidebar
+becomes an overlay drawer.
 
 ### The composer state machine
 
@@ -176,7 +187,7 @@ src/
     ├── shell/            AppShell, Sidebar, TopBar, ConnectionBadge, ErrorBanner
     ├── chat/             Greeting, MessageList, AssistantMessage, Composer…
     ├── trace/            ControllerTimeline, SubQueryList, EvidenceList, VersionDiff…
-    └── demo/             DemoBar
+    └── replay/           ReplayBar
 ```
 
 ### Conventions
@@ -193,23 +204,27 @@ src/
 
 ---
 
-## Demo mode
+## Test cases and replay mode
 
-`?demo=1` reveals a bar with four fixtures bound to number keys, a speed slider and
-`R` to reset.
+The console asks the engine for its test cases (`GET /fixtures`): only those written
+for the corpus it is serving, so an ASQA question is never replayed against the
+enterprise index or the other way round. The idle screen shows one per family, and
+**Browse all test cases** lists every one, searchable by what is said. A click
+replays the case through the same path the eval harness scores.
 
-| Key | Fixture | Proves |
+`?replay=1` adds a bar with the same one-per-family cases bound to number keys, a
+speed slider and `R` to reset:
+
+| Key | Family | Proves |
 |---|---|---|
-| `1` | compound multi-intent utterance | G2 early retrieval + G3 decomposition |
+| `1` | compound multi-intent request | G2 early retrieval + G3 decomposition |
 | `2` | late-arriving detail | G5 refine, don't restart |
 | `3` | presentation-only turn | suppression, zero retrieval |
-| `4` | question the corpus can't answer | G4 uncertainty, no fabrication |
+| `4` | outside the corpus (enterprise) · single-intent question (ASQA) | G4 uncertainty · no over-fragmentation |
 
 **Fixture payloads live server-side in `evals/fixtures/`.** The client sends only
-`{ type: "replay", fixture: "compound_01" }` — nothing about corpus content is
-hardcoded in frontend code, and the console replays exactly what the eval harness
-scores. The same four fixtures are the suggestion chips on the idle screen, so an
-unscripted judge clicking around still lands on the behaviours that matter.
+`{ type: "replay", fixture: "<id>" }`; nothing about corpus content is hardcoded in
+frontend code.
 
 ---
 
@@ -222,10 +237,10 @@ unscripted judge clicking around still lands on the behaviours that matter.
   use `--warn-ink`.
 - **No state is encoded in colour alone.** Every controller decision carries an icon
   and a text label — a grayscale screenshot stays readable.
-- `aria-live="polite"` on the streaming answer; `aria-live="off"` on the trace rail,
+- `aria-live="polite"` on the streaming answer; `aria-live="off"` on the activity list,
   which would otherwise flood a screen reader.
-- Keyboard: `⌘K` new session · `⌘/` toggle trace · `Esc` stop streaming · `1`–`4`
-  fixtures and `R` reset in demo mode.
+- Keyboard: `⌘K` new session · `Esc` stop streaming · `1`–`4`
+  fixtures and `R` reset in replay mode.
 
 ---
 
@@ -255,4 +270,4 @@ regeneration · export.
 labelled "Replay transcript" on hover, so nobody thinks speech recognition was faked.
 
 If time appears, spend it on `ControllerTimeline` and `VersionDiff`. Those two
-components are the demo.
+components carry the story of every turn.

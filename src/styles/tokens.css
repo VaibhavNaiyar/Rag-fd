@@ -71,7 +71,6 @@
 
   /* — layout, animated by the shell grid — */
   --sidebar-w: 260px;
-  --trace-w: 0px;
   --ease-oneui: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 

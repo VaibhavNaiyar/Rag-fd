@@ -82,7 +82,7 @@ export function VersionDiff({ turn }: { turn: Turn }) {
   if (current.claims.length === 0) {
     return (
       <EmptyHint>
-        This turn produced no factual claims to track — a presentation-only turn carries the
+        This turn produced no factual claims to track. A presentation-only turn carries the
         grounding of the previous answer forward.
       </EmptyHint>
     );

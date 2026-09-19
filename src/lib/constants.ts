@@ -10,49 +10,23 @@ export const TYPED_STREAM_WPM = 150;
 export const TYPED_CHUNK_WORDS = { min: 3, max: 5 } as const;
 
 /** Layout breakpoints; kept in step with the media queries in globals.css. */
-export const BREAKPOINT = { trace: 1280, sidebar: 768 } as const;
+export const BREAKPOINT = { sidebar: 768 } as const;
 
-/** Reconnect backoff for the socket, in ms. Capped so a demo always recovers. */
+/** Reconnect backoff for the socket, in ms. Capped so a live session always recovers. */
 export const RECONNECT_BACKOFF_MS = [500, 1000, 2000, 4000, 8000] as const;
 
 /**
- * Demo fixtures. Names only — every payload lives in `evals/fixtures/`
- * server-side, so the UI replays exactly what the eval harness scores and
- * nothing about corpus content is hardcoded in frontend code.
+ * Fixture families, in the order the replay keys 1–4 take them. The fixtures
+ * themselves come from the engine (`GET /fixtures`) for whichever corpus it is
+ * serving, so nothing about corpus content is hardcoded here and the console
+ * replays exactly what the eval harness scores.
  */
-export interface FixtureDescriptor {
-  id: string;
-  hotkey: string;
-  label: string;
-  /** The gate this fixture exists to demonstrate. */
-  proves: string;
-}
-
-export const DEMO_FIXTURES: readonly FixtureDescriptor[] = [
-  {
-    id: "compound_01",
-    hotkey: "1",
-    label: "Compound multi-intent request",
-    proves: "G2 early retrieval · G3 decomposition",
-  },
-  {
-    id: "late_detail_01",
-    hotkey: "2",
-    label: "Late-arriving detail",
-    proves: "G5 refine, don't restart",
-  },
-  {
-    id: "presentation_01",
-    hotkey: "3",
-    label: "Presentation-only turn",
-    proves: "Suppression · zero retrieval",
-  },
-  {
-    id: "unanswerable_01",
-    hotkey: "4",
-    label: "Outside the corpus",
-    proves: "G4 uncertainty, no fabrication",
-  },
-] as const;
+export const FIXTURE_FAMILIES: readonly { family: string; label: string; proves: string }[] = [
+  { family: "compound", label: "Compound multi-intent request", proves: "G2 early retrieval · G3 decomposition" },
+  { family: "late_detail", label: "Late-arriving detail", proves: "G5 refine, don't restart" },
+  { family: "suppression", label: "Presentation-only turn", proves: "Suppression · zero retrieval" },
+  { family: "unanswerable", label: "Outside the corpus", proves: "G4 uncertainty, no fabrication" },
+  { family: "single", label: "Single-intent question", proves: "No over-fragmentation" },
+];
 
 export const REPLAY_SPEEDS = [0.5, 1, 1.5, 2] as const;
