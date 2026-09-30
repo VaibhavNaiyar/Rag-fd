@@ -1,0 +1,242 @@
+/*
+ * Components that lay themselves out by the width of the space they are in, not the
+ * width of the window: a KeyValueGrid, a DataTable, a Tabs row. Each names a container
+ * (`container: name / inline-size`) and its descendants answer that container with
+ * @container rules. Plain CSS, no plugin.
+ *
+ * Tokens only, and nothing here may produce a horizontal scrollbar.
+ */
+
+@layer components {
+  /* ------------------------------------------------------------------------
+     KeyValueGrid: 1 column under 320px, 2 from 320, 3 from 560, 4 from 800.
+     ------------------------------------------------------------------------ */
+  .kv {
+    container: kv / inline-size;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .kv-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3) var(--space-4);
+  }
+
+  @container kv (min-width: 320px) {
+    .kv-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @container kv (min-width: 560px) {
+    .kv-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @container kv (min-width: 800px) {
+    .kv-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+
+  /* An explicit column count wins over the container rules above. */
+  .kv[data-cols] .kv-grid {
+    grid-template-columns: repeat(var(--kv-cols), minmax(0, 1fr));
+  }
+}
+
+@layer components {
+  /* ------------------------------------------------------------------------
+     DataTable. It answers the width of its own container:
+       under 960px  columns of priority 3 are dropped
+       under 720px  columns of priority 2 are dropped
+       under 480px  every row becomes a record: each value under its column name
+     It is table-layout: fixed and takes the width it is given, so it cannot
+     scroll sideways whatever it holds.
+     ------------------------------------------------------------------------ */
+  .dt {
+    container: dt / inline-size;
+    width: 100%;
+    min-width: 0;
+    --dt-row: var(--row-h);
+  }
+
+  .dt[data-density="compact"] {
+    --dt-row: var(--row-h-compact);
+  }
+
+  @media (pointer: coarse) {
+    .dt[data-density="compact"] {
+      --dt-row: var(--row-h-touch);
+    }
+  }
+
+  .dt-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: var(--text-label);
+    line-height: var(--leading-label);
+  }
+
+  .dt-table th,
+  .dt-table td {
+    min-width: 0;
+    height: var(--dt-row);
+    padding: var(--space-1) var(--space-3);
+    border-bottom: var(--bw-1) solid var(--line);
+    text-align: left;
+    vertical-align: middle;
+    overflow-wrap: anywhere;
+  }
+
+  .dt-table [data-align="end"] {
+    text-align: right;
+  }
+
+  /* The header stays in view while the pane around the table scrolls. */
+  .dt-table th {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    background: var(--surface-2);
+    border-bottom-color: var(--line-strong);
+    color: var(--ink-muted);
+    font-size: var(--text-caption);
+    font-weight: var(--weight-medium);
+    line-height: var(--leading-caption);
+  }
+
+  /* A sortable header is one target: the button fills its cell, and is as tall as a row (44px on touch). */
+  .dt-table th:has(> .dt-sort) {
+    padding: 0;
+  }
+
+  .dt-sort {
+    display: flex;
+    width: 100%;
+    min-height: var(--dt-row);
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-3);
+    color: inherit;
+    font: inherit;
+    text-align: inherit;
+  }
+
+  .dt-table [data-align="end"] .dt-sort {
+    justify-content: flex-end;
+  }
+
+  .dt-sort:hover {
+    color: var(--ink);
+  }
+
+  .dt-table th[aria-sort="ascending"],
+  .dt-table th[aria-sort="descending"] {
+    color: var(--ink);
+  }
+
+  /* A 2px bar marks the open row; every row keeps the same bar, transparent, so nothing shifts. */
+  .dt-table tbody td:first-child {
+    border-left: var(--bw-2) solid transparent;
+  }
+
+  .dt-table tbody tr[data-interactive]:hover td {
+    background: var(--surface-2);
+  }
+
+  .dt-table tbody tr[data-active] td,
+  .dt-table tbody tr[aria-selected="true"] td {
+    background: var(--accent-soft);
+    color: var(--ink);
+  }
+
+  .dt-table tbody tr[data-active] td:first-child {
+    border-left-color: var(--accent);
+  }
+
+  .dt-table tbody tr[data-interactive] {
+    cursor: pointer;
+  }
+
+  .dt-table tbody tr:focus-visible {
+    outline-offset: -2px;
+  }
+
+  @container dt (max-width: 959px) {
+    .dt-table [data-priority="3"] {
+      display: none;
+    }
+  }
+
+  @container dt (max-width: 719px) {
+    .dt-table [data-priority="2"] {
+      display: none;
+    }
+  }
+
+  @container dt (max-width: 479px) {
+    .dt-table,
+    .dt-table tbody,
+    .dt-table tr {
+      display: block;
+    }
+
+    .dt-table thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    /* The header is kept for assistive technology but not drawn, so its buttons must not take focus:
+       a focus ring on something invisible is worse than no sort. Sorting is offered elsewhere here. */
+    .dt-table thead .dt-sort {
+      visibility: hidden;
+    }
+
+    .dt-table tbody tr {
+      margin-top: var(--space-2);
+      border: var(--bw-1) solid var(--line);
+      border-radius: var(--radius-2);
+      background: var(--surface);
+    }
+
+    /* Higher specificity than the priority rules above, so every value is shown. */
+    .dt-table tbody td[data-priority] {
+      display: grid;
+      grid-template-columns: minmax(0, 6rem) minmax(0, 1fr);
+      gap: var(--space-2);
+      height: auto;
+      border-bottom: 0;
+      border-top: var(--bw-1) solid var(--line);
+      text-align: left;
+    }
+
+    .dt-table tbody td[data-priority]:first-child {
+      border-top: 0;
+    }
+
+    .dt-table tbody td[data-priority]::before {
+      content: attr(data-label);
+      color: var(--ink-muted);
+      font-size: var(--text-caption);
+      font-weight: var(--weight-medium);
+    }
+
+    /* A row with a single spanning cell (empty, loading) has no label to show. */
+    .dt-table tbody td[colspan]::before {
+      content: none;
+    }
+
+    .dt-table tbody td[colspan] {
+      display: block;
+    }
+  }
+}

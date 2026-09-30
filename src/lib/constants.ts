@@ -1,3 +1,5 @@
+import { BREAKPOINT_PX } from "@/lib/breakpoints";
+
 /** Values shared across components. Nothing here describes corpus content. */
 
 /** §15 budget: cap stored snippet length so a 20-turn session stays under 150MB. */
@@ -9,8 +11,13 @@ export const TYPED_STREAM_WPM = 150;
 /** Words per emitted transcript chunk — matches how an ASR partial arrives. */
 export const TYPED_CHUNK_WORDS = { min: 3, max: 5 } as const;
 
-/** Layout breakpoints; kept in step with the media queries in globals.css. */
-export const BREAKPOINT = { sidebar: 768 } as const;
+/**
+ * LEGACY, deleted with the old shell in P12: the widths the old three-column shell
+ * switches at, kept in step with legacy.css. `sidebar` is a step of the new scale;
+ * `trace` is not, which is one reason the shell is being replaced. The scale itself
+ * lives in src/lib/breakpoints.ts.
+ */
+export const BREAKPOINT = { sidebar: BREAKPOINT_PX.md, trace: 1180 } as const;
 
 /** Reconnect backoff for the socket, in ms. Capped so a live session always recovers. */
 export const RECONNECT_BACKOFF_MS = [500, 1000, 2000, 4000, 8000] as const;

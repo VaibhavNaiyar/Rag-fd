@@ -1,21 +1,22 @@
 "use client";
 
 import type { HTMLAttributes, ReactNode } from "react";
-import { cn } from "@/lib/cn";
-
-export type PillTone = "neutral" | "primary" | "brand" | "ok" | "warn" | "error";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
 
 /**
- * Tone classes pair a colour with a border, never with colour alone — every
- * caller is also required to pass a label, so a grayscale screenshot still reads.
+ * LEGACY, deleted in P12: the old name of Badge, with its old props, so the screens
+ * that still use it keep working. It is Badge underneath, so it no longer forces its
+ * row wider than the screen, and its `title` is a real tooltip.
  */
-const TONES: Record<PillTone, string> = {
-  neutral: "bg-sunken text-ink-muted border-line",
-  primary: "bg-primary-soft text-primary-ink border-edge-primary",
-  brand: "bg-primary-soft text-brand border-edge-brand",
-  ok: "bg-ok-soft text-[var(--ok-ink)] border-edge-ok",
-  warn: "bg-warn-soft text-warn-ink border-edge-warn",
-  error: "bg-error-soft text-error border-edge-error",
+export type PillTone = "neutral" | "primary" | "brand" | "ok" | "warn" | "error";
+
+const TONES: Record<PillTone, BadgeTone> = {
+  neutral: "neutral",
+  primary: "accent",
+  brand: "accent",
+  ok: "ok",
+  warn: "warn",
+  error: "error",
 };
 
 export interface PillProps extends HTMLAttributes<HTMLSpanElement> {
@@ -25,20 +26,10 @@ export interface PillProps extends HTMLAttributes<HTMLSpanElement> {
   children: ReactNode;
 }
 
-export function Pill({ tone = "neutral", icon, mono = false, className, children, ...props }: PillProps) {
+export function Pill({ tone = "neutral", icon, mono = false, title, children, ...props }: PillProps) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-pill border px-2 py-0.5",
-        "text-caption font-medium leading-4 whitespace-nowrap",
-        mono && "font-mono tabular",
-        TONES[tone],
-        className,
-      )}
-      {...props}
-    >
-      {icon}
+    <Badge tone={TONES[tone]} glyph={icon} mono={mono} tooltip={title} {...props}>
       {children}
-    </span>
+    </Badge>
   );
 }

@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { useId, useMemo, useState } from "react";
 import { EmptyHint } from "@/components/ui/EmptyHint";
 import { useElementWidth } from "@/hooks/useElementWidth";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { DECISION_VISUALS, reasonLabel, TRIGGER_LABELS } from "@/lib/decisions";
-import { formatLead, formatMs } from "@/lib/format";
+import { formatCount, formatLead, formatMs, formatUsd } from "@/lib/format";
 import { retrievalLeadMs } from "@/store/selectors";
 import type { Turn } from "@/store/types";
 
@@ -16,7 +17,14 @@ import type { Turn } from "@/store/types";
  * judge must be able to read off this component, in a compressed 1080p frame,
  * is that a retrieval marker sits to the LEFT of the utterance-end rule — and
  * by how much, stated as a number rather than as a bar to be measured.
+ *
+ * Below `COMPACT_BREAKPOINT` the track sheds its axis chrome (the "0ms" origin
+ * label, the long-form "utterance end …" caption) so the plot itself keeps its
+ * full width on a phone rather than fighting text for room; the same numbers
+ * are still one tap away in the tooltip.
  */
+
+const COMPACT_BREAKPOINT = "(max-width: 420px)";
 
 const HEIGHT = 104;
 const TRACK_Y = 52;
@@ -49,14 +57,60 @@ function usePlot(turn: Turn, width: number): Plot {
   }, [turn.decisions, turn.retrievals, turn.transcript, turn.utteranceEndMs, width]);
 }
 
+interface TooltipState {
+  x: number;
+  title: string;
+  detail?: string;
+}
+
+/** A small, non-obscuring readout pinned above the point that triggered it. */
+function Tooltip({ tooltip, width }: { tooltip: TooltipState; width: number }) {
+  const clampedX = Math.min(Math.max(tooltip.x, 4), width - 4);
+  const align = tooltip.x < 44 ? "left" : tooltip.x > width - 44 ? "right" : "center";
+  return (
+    <div
+      role="tooltip"
+      className="pointer-events-none absolute z-10 whitespace-nowrap rounded-md border border-line bg-raised px-2 py-1 text-caption shadow-lift animate-rise-in"
+      style={{
+        left: clampedX,
+        top: END_RULE_TOP - 16,
+        transform: `translate(${align === "center" ? "-50%" : align === "left" ? "0" : "-100%"}, -100%)`,
+      }}
+    >
+      <div className="font-mono font-semibold tabular text-ink">{tooltip.title}</div>
+      {tooltip.detail && <div className="text-ink-muted">{tooltip.detail}</div>}
+    </div>
+  );
+}
+
+/**
+ * Shared hover + tap handlers so mouse and touch both surface the same
+ * tooltip. Plain helper, not a hook — deliberately not named `use*` so
+ * `eslint-plugin-react-hooks` doesn't flag its call sites inside `.map()`
+ * and conditionals as rules-of-hooks violations.
+ */
+function pointHandlers(setTooltip: (t: TooltipState | null) => void, point: TooltipState) {
+  return {
+    onMouseEnter: () => setTooltip(point),
+    onMouseLeave: () => setTooltip(null),
+    onFocus: () => setTooltip(point),
+    onBlur: () => setTooltip(null),
+    onClick: () => setTooltip(point),
+  };
+}
+
 function RetrievalMarker({
   x,
   cancelled,
   index,
+  label,
+  handlers,
 }: {
   x: number;
   cancelled: boolean;
   index: number;
+  label: string;
+  handlers: ReturnType<typeof pointHandlers>;
 }) {
   return (
     <g
@@ -92,26 +146,43 @@ function RetrievalMarker({
           strokeWidth={1.5}
         />
       )}
+      {/* Larger, invisible hit target — a 5px marker is too small to hover/tap reliably. */}
+      <circle
+        cx={x}
+        cy={TRACK_Y}
+        r={12}
+        fill="transparent"
+        tabIndex={0}
+        role="button"
+        aria-label={label}
+        className="cursor-pointer outline-none"
+        {...handlers}
+      />
     </g>
   );
 }
 
 export function ControllerTimeline({ turn }: { turn: Turn }) {
+  const uid = useId();
   const { ref, width } = useElementWidth<HTMLDivElement>(340);
   const plot = usePlot(turn, width);
+  const compact = useMediaQuery(COMPACT_BREAKPOINT);
+  const [tooltip, setTooltip] = useState<TooltipState | null>(null);
 
   const lead = retrievalLeadMs(turn);
   const endX = turn.utteranceEndMs === null ? null : plot.x(turn.utteranceEndMs);
   const firstX = turn.firstRetrievalMs === null ? null : plot.x(turn.firstRetrievalMs);
   const suppressDecision = turn.decisions.find((decision) => decision.decision === "suppress");
+  const gradientId = `lead-gradient-${uid}`;
+  const arrowId = `lead-arrow-${uid}`;
 
   return (
-    <div ref={ref} className="w-full">
+    <div ref={ref} className="relative w-full">
       <svg
         width={width}
         height={HEIGHT}
         viewBox={`0 0 ${width} ${HEIGHT}`}
-        role="img"
+        role="group"
         aria-label={
           lead === null
             ? "Controller timeline for the current turn"
@@ -119,6 +190,19 @@ export function ControllerTimeline({ turn }: { turn: Turn }) {
         }
         className="block overflow-visible"
       >
+        <defs>
+          {/* The G2 lead vector: Samsung Blue deepening from its navy stop to the
+              brand blue, with an arrowhead so it reads as a directional lead —
+              not just a bar to be measured with a ruler. */}
+          <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="var(--sam-blue)" />
+            <stop offset="100%" stopColor="var(--ui-primary)" />
+          </linearGradient>
+          <marker id={arrowId} viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" fill="var(--ui-primary)" />
+          </marker>
+        </defs>
+
         {/* The track: the utterance, from first word to last. */}
         <line
           x1={PAD_X}
@@ -130,19 +214,41 @@ export function ControllerTimeline({ turn }: { turn: Turn }) {
           strokeLinecap="round"
         />
 
-        {/* Transcript ticks — the shape of the incoming stream. */}
-        {turn.transcript.map((chunk, index) => (
-          <line
-            key={`t-${index}`}
-            x1={plot.x(chunk.atMs)}
-            y1={TRACK_Y - 4}
-            x2={plot.x(chunk.atMs)}
-            y2={TRACK_Y + 4}
-            stroke="var(--state-wait)"
-            strokeWidth={1}
-            opacity={0.5}
-          />
-        ))}
+        {/* Transcript ticks — the shape of the incoming stream. Each is a small
+            hoverable point so a judge can read the exact chunk arrival time. */}
+        {turn.transcript.map((chunk, index) => {
+          const x = plot.x(chunk.atMs);
+          const handlers = pointHandlers(setTooltip, {
+            x,
+            title: `chunk ${index + 1} · ${formatMs(chunk.atMs)}`,
+            detail: chunk.text.length > 42 ? `${chunk.text.slice(0, 42)}…` : chunk.text,
+          });
+          return (
+            <g key={`t-${index}`}>
+              <line
+                x1={x}
+                y1={TRACK_Y - 4}
+                x2={x}
+                y2={TRACK_Y + 4}
+                stroke="var(--state-wait)"
+                strokeWidth={1}
+                opacity={0.5}
+              />
+              <rect
+                x={x - 5}
+                y={TRACK_Y - 10}
+                width={10}
+                height={20}
+                fill="transparent"
+                tabIndex={0}
+                role="button"
+                aria-label={`Transcript chunk ${index + 1} at ${formatMs(chunk.atMs)}`}
+                className="cursor-pointer outline-none"
+                {...handlers}
+              />
+            </g>
+          );
+        })}
 
         {/* The lead span: the number a judge should not have to measure. */}
         {lead !== null && lead > 0 && firstX !== null && endX !== null && (
@@ -150,21 +256,24 @@ export function ControllerTimeline({ turn }: { turn: Turn }) {
             <line
               x1={firstX}
               y1={END_RULE_TOP - 6}
-              x2={endX}
+              x2={endX - 6}
               y2={END_RULE_TOP - 6}
-              stroke="var(--state-retrieve)"
-              strokeWidth={1.5}
+              stroke={`url(#${gradientId})`}
+              strokeWidth={2.5}
+              strokeLinecap="round"
+              markerEnd={`url(#${arrowId})`}
             />
-            <line x1={firstX} y1={END_RULE_TOP - 11} x2={firstX} y2={END_RULE_TOP - 1} stroke="var(--state-retrieve)" strokeWidth={1.5} />
-            <line x1={endX} y1={END_RULE_TOP - 11} x2={endX} y2={END_RULE_TOP - 1} stroke="var(--state-retrieve)" strokeWidth={1.5} />
-            <text
-              x={(firstX + endX) / 2}
-              y={END_RULE_TOP - 14}
-              textAnchor="middle"
-              className="fill-[var(--ui-primary-ink)] font-mono text-[11px] font-semibold"
-            >
-              {formatLead(lead)} early
-            </text>
+            <line x1={firstX} y1={END_RULE_TOP - 11} x2={firstX} y2={END_RULE_TOP - 1} stroke="var(--ui-primary)" strokeWidth={1.5} />
+            {!compact && (
+              <text
+                x={(firstX + endX) / 2}
+                y={END_RULE_TOP - 14}
+                textAnchor="middle"
+                className="fill-[var(--ui-primary-ink)] font-mono text-[11px] font-semibold"
+              >
+                {formatLead(lead)} early
+              </text>
+            )}
           </g>
         )}
 
@@ -190,14 +299,24 @@ export function ControllerTimeline({ turn }: { turn: Turn }) {
           </g>
         )}
 
-        {turn.retrievals.map((record, index) => (
-          <RetrievalMarker
-            key={`${record.subQueryId}-${record.atMs}`}
-            x={plot.x(record.atMs)}
-            cancelled={record.cancelledReason !== undefined}
-            index={index}
-          />
-        ))}
+        {turn.retrievals.map((record, index) => {
+          const x = plot.x(record.atMs);
+          const title = `${record.cancelledReason ? "cancelled" : TRIGGER_LABELS[record.trigger]} search · ${formatMs(record.atMs)}`;
+          return (
+            <RetrievalMarker
+              key={`${record.subQueryId}-${record.atMs}`}
+              x={x}
+              cancelled={record.cancelledReason !== undefined}
+              index={index}
+              label={title}
+              handlers={pointHandlers(setTooltip, {
+                x,
+                title,
+                detail: record.cancelledReason ? reasonLabel(record.cancelledReason) : `"${record.query}"`,
+              })}
+            />
+          );
+        })}
 
         {/* The utterance-end rule, always visible once it lands. */}
         {endX !== null && (
@@ -210,23 +329,99 @@ export function ControllerTimeline({ turn }: { turn: Turn }) {
               stroke="var(--ink)"
               strokeWidth={2}
             />
-            <text
-              x={Math.min(endX + 6, width - 4)}
-              y={END_RULE_BOTTOM + 12}
-              textAnchor={endX > width - 90 ? "end" : "start"}
-              className="fill-[var(--ink-muted)] font-mono text-[10px]"
-            >
-              utterance end {formatMs(turn.utteranceEndMs ?? 0)}
-            </text>
+            {!compact && (
+              <text
+                x={Math.min(endX + 6, width - 4)}
+                y={END_RULE_BOTTOM + 12}
+                textAnchor={endX > width - 90 ? "end" : "start"}
+                className="fill-[var(--ink-muted)] font-mono text-[10px]"
+              >
+                utterance end {formatMs(turn.utteranceEndMs ?? 0)}
+              </text>
+            )}
+            <rect
+              x={endX - 8}
+              y={END_RULE_TOP - 4}
+              width={16}
+              height={END_RULE_BOTTOM - END_RULE_TOP + 8}
+              fill="transparent"
+              tabIndex={0}
+              role="button"
+              aria-label={`Utterance end at ${formatMs(turn.utteranceEndMs ?? 0)}`}
+              className="cursor-pointer outline-none"
+              {...pointHandlers(setTooltip, {
+                x: endX,
+                title: `utterance end · ${formatMs(turn.utteranceEndMs ?? 0)}`,
+                detail: turn.latencyMs
+                  ? `first token ${formatMs(turn.latencyMs.firstToken)} later${
+                      turn.cost ? ` · ${formatCount(turn.cost.turnTokens)} tok · ${formatUsd(turn.cost.turnUsd)}` : ""
+                    }`
+                  : undefined,
+              })}
+            />
           </g>
         )}
 
-        <text x={PAD_X} y={TRACK_Y + 20} className="fill-[var(--ink-muted)] font-mono text-[10px]">
-          0ms
-        </text>
+        {!compact && (
+          <text x={PAD_X} y={TRACK_Y + 20} className="fill-[var(--ink-muted)] font-mono text-[10px]">
+            0ms
+          </text>
+        )}
       </svg>
 
+      {tooltip && <Tooltip tooltip={tooltip} width={width} />}
+
+      <Legend turn={turn} lead={lead} />
       <DecisionLog turn={turn} />
+    </div>
+  );
+}
+
+/**
+ * A small, persistent key to the plot's marker vocabulary.
+ *
+ * The tooltips carry the exact numbers, but a reader shouldn't need to hover
+ * every point just to learn what a filled dot versus a dashed ring means —
+ * that's exactly the gap between a chart you can screenshot and one you can
+ * actually read. Only shows swatches for marks the plot actually used.
+ */
+function Legend({ turn, lead }: { turn: Turn; lead: number | null }) {
+  const hasRetrieval = turn.retrievals.some((r) => r.cancelledReason === undefined);
+  const hasCancelled = turn.retrievals.some((r) => r.cancelledReason !== undefined);
+  const hasEnd = turn.utteranceEndMs !== null;
+  const hasLead = lead !== null && lead > 0;
+  if (!hasRetrieval && !hasCancelled && !hasEnd && !hasLead) return null;
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line pt-2 text-caption text-ink-muted">
+      {hasLead && (
+        <span className="flex items-center gap-1.5">
+          <span aria-hidden className="h-0.5 w-4 shrink-0 rounded-full" style={{ background: "var(--ai-glow)" }} />
+          lead time
+        </span>
+      )}
+      {hasRetrieval && (
+        <span className="flex items-center gap-1.5">
+          <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background: "var(--state-retrieve)" }} />
+          retrieval
+        </span>
+      )}
+      {hasCancelled && (
+        <span className="flex items-center gap-1.5">
+          <span
+            aria-hidden
+            className="h-2 w-2 shrink-0 rounded-full border-[1.5px] border-dashed"
+            style={{ borderColor: "var(--state-retrieve)" }}
+          />
+          cancelled
+        </span>
+      )}
+      {hasEnd && (
+        <span className="flex items-center gap-1.5">
+          <span aria-hidden className="h-3 w-0.5 shrink-0" style={{ background: "var(--ink)" }} />
+          utterance end
+        </span>
+      )}
     </div>
   );
 }
@@ -265,7 +460,7 @@ function DecisionLog({ turn }: { turn: Turn }) {
               className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full"
               style={{ background: visual.colorVar }}
             />
-            <span className="min-w-0">
+            <span className="min-w-0 break-words">
               <span className="font-medium text-ink-body">{visual.label}</span>
               <span className="text-ink-muted"> · {reasonLabel(decision.reason)}</span>
               {trigger && (

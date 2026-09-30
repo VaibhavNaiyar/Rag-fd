@@ -1,0 +1,98 @@
+/*
+ * The application frame and the workbench inside it (PHASES.md §3.5).
+ *
+ * Every measure is a layout token from tokens.css. A media query cannot read a custom
+ * property, so the two widths used here are written out: 768 (md: the nav rail replaces
+ * the tab bar) and 1024 (lg: the Inspector docks beside the view instead of opening as
+ * a sheet). src/lib/breakpoints.test.ts fails if either drifts from the scale.
+ *
+ * Nothing here has a fixed width except through a token, and nothing may cause a
+ * horizontal scrollbar: every grid track that holds a view is minmax(0, 1fr).
+ */
+
+@layer components {
+  /* The frame pads itself by the safe areas (notch, home indicator), bar by bar, so a
+     coloured bar can run under them. The body's own padding for the old shell would
+     count them twice. */
+  body:has(.frame) {
+    padding: 0;
+  }
+
+  /* Phone (below 768): top bar, the view, tab bar. */
+  .frame {
+    display: grid;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "top"
+      "main"
+      "bottom";
+    background: var(--canvas);
+    color: var(--ink-body);
+  }
+
+  /* md 768 and up: a nav rail beside the view, a status strip below both. */
+  @media (min-width: 768px) {
+    .frame {
+      grid-template-columns: calc(var(--nav-w) + var(--safe-left)) minmax(0, 1fr);
+      grid-template-areas:
+        "top top"
+        "nav main"
+        "bottom bottom";
+    }
+  }
+
+  .frame-top {
+    grid-area: top;
+  }
+
+  .frame-nav {
+    grid-area: nav;
+  }
+
+  .frame-main {
+    grid-area: main;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .frame-bottom {
+    grid-area: bottom;
+  }
+
+  /* The view and the Inspector. Closed, or below lg, the view has the whole width. */
+  .workbench {
+    display: grid;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* lg 1024 and up: the Inspector is docked, with a drag handle between the two. Its
+     width is kept in --inspector-size (set from the resizer) and held between the
+     minimum and the maximum tokens. */
+  @media (min-width: 1024px) {
+    .workbench[data-inspector="docked"] {
+      grid-template-columns: minmax(0, 1fr) auto clamp(var(--inspector-min), var(--inspector-size, var(--inspector-w)), var(--inspector-max));
+    }
+  }
+
+  /* A pane is a region that scrolls its own content and answers its own width: its
+     descendants can use @container rules, so the Inspector at 360px behaves like a
+     phone even on a wide desktop. */
+  .pane {
+    container: pane / inline-size;
+    /* The containing block for anything absolutely positioned inside, such as a visually
+       hidden label: without it that element is placed against the page and, sitting below
+       the pane's visible part, makes the page taller than the window. */
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    overflow-x: clip;
+    overflow-y: auto;
+  }
+}

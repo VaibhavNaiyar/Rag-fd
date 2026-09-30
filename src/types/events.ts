@@ -4,7 +4,7 @@
  * Server -> client is AG-UI (https://docs.ag-ui.com): every frame is a standard
  * AG-UI event, validated against `@ag-ui/core`'s own schemas on arrival. What
  * this file adds is the shape of OUR payloads inside those events, mirrored from
- * the engine's translator (`Samsung-bd/src/slr/api/agui.py`):
+ * the engine's translator (`Rag-bd/src/slr/api/agui.py`):
  *
  * - a turn is one run (`runId` = turn id, `threadId` = session id)
  * - the pipeline stages are steps: `listen` → `plan` → `retrieve` → `synthesise`
@@ -20,8 +20,42 @@
 /** Retrieval controller verdict for one transcript fragment. */
 export type Decision = "wait" | "retrieve" | "suppress" | "refine";
 
-/** Why a retrieval was launched. Drives the timeline marker's label. */
-export type RetrievalTrigger = "provisional" | "multi_intent" | "refine";
+/**
+ * Why a retrieval was launched. Drives the timeline marker's label.
+ * `full_utterance` is the end-of-utterance search that always follows a
+ * provisional/multi-intent/refine launch — the trace record's
+ * `retrieval_events` carries it (`Rag-bd/src/slr/stream/engine.py`); the live
+ * AG-UI stream does not currently emit it as a `corpus_search` trigger, so a
+ * switch over this union must still handle it to stay exhaustive against the
+ * trace contract (SD-03).
+ */
+export type RetrievalTrigger = "provisional" | "multi_intent" | "refine" | "full_utterance";
+
+/** Every trigger value, for an exhaustive switch or a runtime membership check. */
+export const RETRIEVAL_TRIGGERS: readonly RetrievalTrigger[] = ["provisional", "multi_intent", "refine", "full_utterance"];
+
+/**
+ * Every reason code the rules controller emits (`Rag-bd/src/slr/controller/rules.py`),
+ * plus the two cancellation reasons and the model-controller's error fallback.
+ * The wire type of `reason` stays `string` — the model controller (`controller/model.py`)
+ * can emit free-form LLM text — but this array is what a label lookup enumerates
+ * against before falling back to humanising the raw code.
+ */
+export const KNOWN_REASON_CODES = [
+  "intent_stable",
+  "clause_complete",
+  "multi_intent_detected",
+  "late_constraint",
+  "insufficient_content",
+  "awaiting_next_intent",
+  "provisional_budget_spent",
+  "intent_unstable",
+  "presentation_restructure",
+  "no_information_need",
+  "utterance_complete",
+  "topic_shift",
+  "controller_error",
+] as const;
 
 /** Where a sub-query came from: guessed mid-utterance, or decomposed at the end. */
 export type SubQuerySource = "provisional" | "decomposed";

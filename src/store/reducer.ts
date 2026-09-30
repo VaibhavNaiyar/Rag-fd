@@ -30,9 +30,20 @@ import {
  * standard event we do not use is not an error.
  */
 
-export function createTurn(id: string): Turn {
+/**
+ * A turn's real identity (SD-01): `turn_id` alone repeats — every session's
+ * first turn is `t1` — so after a reconnect a bare id can collide with a turn
+ * from an earlier session still in the store. Every lookup below keys on this,
+ * never on `id` alone.
+ */
+export function turnKey(sessionId: string, turnId: string): string {
+  return `${sessionId}:${turnId}`;
+}
+
+export function createTurn(id: string, sessionId: string): Turn {
   return {
     id,
+    sessionId,
     transcript: [],
     utteranceEndMs: null,
     decisions: [],
@@ -58,13 +69,20 @@ const STEP_STATUS: Record<PipelineStep, TurnStatus> = {
   synthesise: "answering",
 };
 
-/** Replace one turn, creating it if it has not been seen yet. */
-function withTurn(state: AppState, turnId: string, mutate: (turn: Turn) => Turn): AppState {
-  const index = state.turns.findIndex((turn) => turn.id === turnId);
+/**
+ * Replace one turn, creating it if it has not been seen yet, keyed by
+ * {@link turnKey} — never by `turnId` alone (SD-01: a bare id repeats across
+ * sessions). `sessionId` defaults to the currently active session; every event
+ * that carries only a bare `turnId` (a tool call, a text message, a step) is
+ * always about the run in flight, which belongs to `state.activeSessionId`.
+ */
+function withTurn(state: AppState, turnId: string, mutate: (turn: Turn) => Turn, sessionId = state.activeSessionId ?? "unknown"): AppState {
+  const key = turnKey(sessionId, turnId);
+  const index = state.turns.findIndex((turn) => turnKey(turn.sessionId, turn.id) === key);
   const turns = [...state.turns];
 
   if (index === -1) {
-    turns.push(mutate(createTurn(turnId)));
+    turns.push(mutate(createTurn(turnId, sessionId)));
   } else {
     const existing = turns[index];
     if (!existing) return state;
@@ -190,17 +208,21 @@ function syncShared(state: AppState, shared: SharedState, only?: Set<string>): A
   return firstWords.length > 0 ? touchSession(next, firstWords[0]) : next;
 }
 
+/**
+ * A snapshot is the newest run (SD-01 fix): a reconnect or a `session.new` gets
+ * a fresh `session.id`, and this always adopts it as active rather than only
+ * the first one this store instance ever saw — otherwise every turn after the
+ * first session silently keyed itself to a session nobody is in any more.
+ */
 function openSession(state: AppState, shared: SharedState): AppState {
-  const id = shared.session?.id;
+  const id = shared.session?.id ?? null;
+  const known = id !== null && state.sessions.some((session) => session.id === id);
   const opened: AppState = {
     ...state,
     connection: "open",
     lastError: null,
-    activeSessionId: state.activeSessionId ?? id ?? null,
-    sessions:
-      state.sessions.length > 0 || !id
-        ? state.sessions
-        : [{ id, title: "New session", updatedAt: Date.now(), turnCount: 0 }],
+    activeSessionId: id ?? state.activeSessionId,
+    sessions: id && !known ? [...state.sessions, { id, title: "New session", updatedAt: Date.now(), turnCount: 0 }] : state.sessions,
   };
   return syncShared(opened, shared);
 }

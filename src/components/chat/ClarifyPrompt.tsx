@@ -31,8 +31,11 @@ export function ClarifyPrompt({ options }: { options: string[] }) {
             disabled={isListening}
             onClick={() => sendUtterance(`Sorry, I meant ${option}`)}
             className={cn(
-              "rounded-pill border border-edge-primary bg-raised px-3 py-1 text-caption text-primary-ink",
-              "transition-colors hover:bg-primary hover:text-white disabled:opacity-40",
+              // min-w-0: a flex item's default min-width is `auto`, which would stop a
+              // long reading from wrapping or shrinking below its unbroken content width
+              // — at 375px that pushes the button past the viewport instead of wrapping.
+              "min-w-0 max-w-full break-words rounded-pill border border-edge-primary bg-raised px-3 py-1 text-left text-caption text-primary-ink",
+              "transition-colors hover:bg-primary hover:text-[var(--on-primary)] disabled:opacity-40",
             )}
           >
             {option}

@@ -25,12 +25,27 @@ import type { Turn } from "@/store/types";
  * runs, folded to its one-line summary once it is done.
  */
 
+/** The row's left-rail accent — genuine status only (ok/warn/error/an active
+ *  gate), never one colour per row type, so colour stays a signal instead of
+ *  decoration. Rows with nothing notable to report get the neutral rail. */
+type RowTone = "neutral" | "primary" | "brand" | "ok" | "warn" | "error";
+
 interface Row {
   id: string;
   text: ReactNode;
+  tone?: RowTone;
   badge?: { label: string; tone: "muted" | "error" | "ok" };
   detail?: ReactNode;
 }
+
+const TONE_BORDER: Record<RowTone, string> = {
+  neutral: "border-l-line",
+  primary: "border-l-primary",
+  brand: "border-l-brand",
+  ok: "border-l-ok",
+  warn: "border-l-warn",
+  error: "border-l-error",
+};
 
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${formatCount(n)} ${n === 1 ? one : many}`;
@@ -41,14 +56,18 @@ function buildRows(turn: Turn): Row[] {
 
   if (turn.transcript.length > 0) {
     const lead = retrievalLeadMs(turn);
+    const early = lead !== null && lead > 0;
     rows.push({
       id: "listen",
       text: (
         <>
           Listened to {plural(turn.transcript.length, "transcript chunk")}
-          {lead !== null && lead > 0 && <> and started searching {formatLead(lead)} before you finished</>}
+          {early && <> and started searching {formatLead(lead)} before you finished</>}
         </>
       ),
+      // Primary the moment G2's early-retrieval win is first mentioned — the
+      // same blue the timeline below uses for the retrieval marker itself.
+      tone: early ? "primary" : "neutral",
       detail: <ControllerTimeline turn={turn} />,
     });
   }
@@ -62,7 +81,7 @@ function buildRows(turn: Turn): Row[] {
     });
   }
   if (turn.decisions.some((d) => d.decision === "refine")) {
-    rows.push({ id: "refine", text: <>Treated this as a detail on your previous request</> });
+    rows.push({ id: "refine", text: <>Treated this as a detail on your previous request</>, tone: "brand" });
   }
 
   for (const search of [...turn.retrievals].sort((a, b) => a.atMs - b.atMs)) {
@@ -77,6 +96,7 @@ function buildRows(turn: Turn): Row[] {
           <span className="text-ink-muted"> · {TRIGGER_LABELS[search.trigger]} · at {formatMs(search.atMs)}</span>
         </>
       ),
+      tone: search.cancelledReason ? "error" : "primary",
       badge: search.cancelledReason
         ? { label: `Cancelled: ${reasonLabel(search.cancelledReason)}`, tone: "error" }
         : undefined,
@@ -143,6 +163,11 @@ function buildRows(turn: Turn): Row[] {
             {version.fullCorpusSearch ? "full-corpus search re-run" : "no full-corpus search"}
           </>
         ),
+      // The version's actual outcome, not just "an answer happened": clean
+      // grounding is ok, real uncertainty is warn, a fabricated citation is
+      // error — matching how the same three states already read everywhere
+      // else in the trace rail (Pill/Stat tones, VersionDiff's own badges).
+      tone: version.fabricatedCitations > 0 ? "error" : unverified > 0 ? "warn" : "ok",
       badge: version.fabricatedCitations > 0 ? { label: `${version.fabricatedCitations} fabricated`, tone: "error" } : undefined,
       detail: turn.versions.length > 1 ? <VersionDiff turn={turn} /> : undefined,
     });
@@ -157,6 +182,7 @@ function buildRows(turn: Turn): Row[] {
           {turn.cost && <> · {formatUsd(turn.cost.turnUsd)}</>}
         </>
       ),
+      tone: "ok",
       detail: <MetricsBar turn={turn} />,
     });
   }
@@ -165,6 +191,7 @@ function buildRows(turn: Turn): Row[] {
     rows.push({
       id: "error",
       text: <>{turn.errorMessage ?? "The engine reported an error on this turn."}</>,
+      tone: "error",
       badge: { label: "Failed", tone: "error" },
     });
   }
@@ -196,7 +223,10 @@ function ActivityRow({ row }: { row: Row }) {
   const [open, setOpen] = useState(false);
   const content = (
     <>
-      <span className="min-w-0 flex-1">{row.text}</span>
+      {/* break-words alongside min-w-0/flex-1: a row can carry the error message,
+          or a raw search.query the user typed — neither is guaranteed to contain
+          a wrap point, so min-w-0's flex-sizing fix alone isn't enough at 375px. */}
+      <span className="min-w-0 flex-1 break-words">{row.text}</span>
       {row.badge && <span className={cn("shrink-0 font-medium", BADGE_TONE[row.badge.tone])}>{row.badge.label}</span>}
       {row.detail && (
         <ChevronRight
@@ -209,7 +239,7 @@ function ActivityRow({ row }: { row: Row }) {
   );
 
   return (
-    <li className="border-t border-line first:border-t-0">
+    <li className={cn("border-l-[3px] border-t border-line first:border-t-0", TONE_BORDER[row.tone ?? "neutral"])}>
       {row.detail ? (
         <button
           type="button"

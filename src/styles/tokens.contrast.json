@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "about": "Foreground/background pairs that tokens.test.ts holds to a WCAG 2.x contrast minimum, in both themes. A group with \"on\": \"surfaces\" pairs every foreground with every surface; a group with \"pairs\" lists [foreground, background] explicitly. 102 pairs per theme.",
+  "surfaces": ["--canvas", "--surface", "--surface-2", "--surface-3"],
+  "groups": [
+    {
+      "kind": "text",
+      "min": 4.5,
+      "note": "Text on any surface (WCAG 1.4.3).",
+      "foregrounds": ["--ink", "--ink-body", "--ink-muted", "--accent-ink", "--ok-ink", "--warn-ink", "--error-ink"],
+      "on": "surfaces"
+    },
+    {
+      "kind": "mark",
+      "min": 3,
+      "note": "Dots, bars, icons, lanes and control boundaries on any surface (WCAG 1.4.11).",
+      "foregrounds": [
+        "--ok",
+        "--warn",
+        "--error",
+        "--state-wait",
+        "--state-retrieve",
+        "--state-refine",
+        "--state-suppress",
+        "--span-listen",
+        "--span-plan",
+        "--span-retrieve",
+        "--span-synthesise",
+        "--span-cancel",
+        "--line-control",
+        "--focus-ring"
+      ],
+      "on": "surfaces"
+    },
+    {
+      "kind": "text",
+      "min": 4.5,
+      "note": "Status ink on its own soft fill, and text on a selected row.",
+      "pairs": [
+        ["--ok-ink", "--ok-soft"],
+        ["--warn-ink", "--warn-soft"],
+        ["--error-ink", "--error-soft"],
+        ["--accent-ink", "--accent-soft"],
+        ["--ink", "--accent-soft"],
+        ["--ink-muted", "--accent-soft"]
+      ]
+    },
+    {
+      "kind": "fill",
+      "min": 4.5,
+      "note": "Label text on solid fills, on navy chrome, and on every hover and pressed state.",
+      "pairs": [
+        ["--on-accent", "--accent"],
+        ["--on-accent", "--accent-hover"],
+        ["--on-accent", "--accent-press"],
+        ["--on-control", "--control"],
+        ["--on-control", "--control-hover"],
+        ["--on-control", "--control-press"],
+        ["--on-chrome", "--chrome"],
+        ["--on-chrome", "--chrome-hover"],
+        ["--on-chrome-muted", "--chrome"],
+        ["--on-chrome-muted", "--chrome-hover"]
+      ]
+    },
+    {
+      "kind": "focus",
+      "min": 3,
+      "note": "The focus ring on navy chrome.",
+      "pairs": [
+        ["--focus-on-chrome", "--chrome"],
+        ["--focus-on-chrome", "--chrome-hover"]
+      ]
+    }
+  ],
+  "decorative": {
+    "--line": "hairline separator",
+    "--line-strong": "pane divider, table rule",
+    "--accent-edge": "outline of a soft accent fill",
+    "--ok-edge": "outline of a soft status fill",
+    "--warn-edge": "outline of a soft status fill",
+    "--error-edge": "outline of a soft status fill",
+    "--chrome-line": "separator on chrome",
+    "--diff-added": "soft fill; the change also carries a glyph and an underline or strike",
+    "--diff-removed": "soft fill; the change also carries a glyph and an underline or strike",
+    "--diff-rewritten": "soft fill; the change also carries a glyph and an underline or strike",
+    "--scrim": "backdrop behind a sheet"
+  }
+}

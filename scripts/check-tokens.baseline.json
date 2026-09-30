@@ -1,0 +1,38 @@
+{
+  "V4": {
+    "src/components/chat/ActivityLog.tsx": 1,
+    "src/components/chat/ClarifyPrompt.tsx": 1,
+    "src/components/chat/Composer.tsx": 2,
+    "src/components/chat/TranscriptStrip.tsx": 1,
+    "src/components/chat/UncertaintyNote.tsx": 1,
+    "src/components/chat/UserBubble.tsx": 1,
+    "src/components/shell/AppShell.tsx": 1,
+    "src/components/trace/ControllerTimeline.tsx": 2,
+    "src/components/trace/EvidenceCard.tsx": 1,
+    "src/components/trace/SubQueryList.tsx": 1,
+    "src/components/trace/VersionDiff.tsx": 1
+  },
+  "V6": {
+    "src/components/chat/ActivityLog.tsx": 2,
+    "src/components/chat/AssistantMessage.tsx": 1,
+    "src/components/chat/Greeting.tsx": 1,
+    "src/components/chat/TranscriptStrip.tsx": 3,
+    "src/components/chat/UserBubble.tsx": 1,
+    "src/components/shell/ConnectionBadge.tsx": 1,
+    "src/components/trace/ControllerTimeline.tsx": 7,
+    "src/components/trace/EvidenceCard.tsx": 1,
+    "src/components/trace/SubQueryList.tsx": 1,
+    "src/components/trace/VersionDiff.tsx": 2
+  },
+  "V7": {
+    "src/components/shell/ConnectionBadge.tsx": 2,
+    "src/components/trace/ControllerTimeline.tsx": 4
+  },
+  "V8": {
+    "src/components/chat/CitationChip.tsx": 2,
+    "src/components/replay/ReplayBar.tsx": 1,
+    "src/components/trace/ControllerTimeline.tsx": 3,
+    "src/components/trace/EvidenceCard.tsx": 2,
+    "src/components/trace/VersionDiff.tsx": 1
+  }
+}

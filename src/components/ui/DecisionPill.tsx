@@ -1,15 +1,16 @@
 "use client";
 
-import { Clock, RefreshCw, Search, SearchX } from "lucide-react";
-import { cn } from "@/lib/cn";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
+import { StatusDot, type StatusShape, type StatusTone } from "@/components/ui/StatusDot";
 import { DECISION_VISUALS, reasonLabel } from "@/lib/decisions";
 import type { Decision } from "@/types/events";
 
-const ICONS: Record<Decision, typeof Clock> = {
-  wait: Clock,
-  retrieve: Search,
-  suppress: SearchX,
-  refine: RefreshCw,
+/** Shape and colour together (PHASES.md §3.3): ring, disc, diamond, barred circle. */
+const MARKS: Record<Decision, { shape: StatusShape; dot: StatusTone; tone: BadgeTone }> = {
+  wait: { shape: "ring", dot: "wait", tone: "neutral" },
+  retrieve: { shape: "filled", dot: "retrieve", tone: "accent" },
+  suppress: { shape: "barred", dot: "suppress", tone: "warn" },
+  refine: { shape: "diamond", dot: "refine", tone: "accent" },
 };
 
 export interface DecisionPillProps {
@@ -20,30 +21,17 @@ export interface DecisionPillProps {
 }
 
 /**
- * The controller's current verdict.
- *
- * Icon + label + reason, never colour alone — a grayscale frame of the video
- * still has to say which decision was taken and why.
+ * The controller's current verdict: a mark whose shape names the decision, the word,
+ * and the reason. Colour reinforces it and is never the only signal, so a grayscale
+ * frame of the video still says which decision was taken and why.
  */
 export function DecisionPill({ decision, reason, confidence, className }: DecisionPillProps) {
-  const visual = DECISION_VISUALS[decision];
-  const Icon = ICONS[decision];
-
+  const mark = MARKS[decision];
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-pill border px-2.5 py-1",
-        "text-caption font-medium leading-4 whitespace-nowrap",
-        visual.pillClass,
-        className,
-      )}
-    >
-      <Icon size={12} aria-hidden className="shrink-0" />
-      {visual.label}
-      {reason && <span className="font-normal opacity-80">· {reasonLabel(reason)}</span>}
-      {confidence !== undefined && (
-        <span className="font-mono tabular opacity-70">{confidence.toFixed(2)}</span>
-      )}
-    </span>
+    <Badge tone={mark.tone} wrap glyph={<StatusDot decorative shape={mark.shape} tone={mark.dot} />} className={className}>
+      {DECISION_VISUALS[decision].label}
+      {reason && <span className="font-normal"> · {reasonLabel(reason)}</span>}
+      {confidence !== undefined && <span className="font-mono font-normal tabular"> {confidence.toFixed(2)}</span>}
+    </Badge>
   );
 }

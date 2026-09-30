@@ -1,0 +1,160 @@
+/*
+ * Markdown answer bodies. Scoped to .answer-prose so nothing leaks into the
+ * trace panes. Tokens only, and nothing here may cause a horizontal scrollbar:
+ * code wraps, table cells wrap, and a labelled table can reflow into records.
+ *
+ * .answer-prose is a named inline-size container, so a narrow Inspector on a wide
+ * desktop reflows exactly like a phone does. It takes its width from its parent.
+ */
+
+@layer components {
+  .answer-prose {
+    container: prose / inline-size;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .answer-prose > * + * {
+    margin-top: var(--space-3);
+  }
+
+  .answer-prose h1,
+  .answer-prose h2,
+  .answer-prose h3 {
+    color: var(--ink);
+    font-size: var(--text-heading);
+    line-height: var(--leading-heading);
+    font-weight: var(--weight-semibold);
+  }
+
+  .answer-prose ul,
+  .answer-prose ol {
+    padding-left: var(--space-5);
+    list-style: revert;
+  }
+
+  .answer-prose li + li {
+    margin-top: var(--space-1);
+  }
+
+  .answer-prose a {
+    color: var(--accent-ink);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .answer-prose a:hover {
+    text-decoration-thickness: 2px;
+  }
+
+  .answer-prose blockquote {
+    padding-left: var(--space-3);
+    border-left: var(--bw-1) solid var(--line-strong);
+    color: var(--ink-muted);
+  }
+
+  .answer-prose sup {
+    font-size: var(--text-caption);
+    line-height: 0;
+  }
+
+  .answer-prose code {
+    padding: 0 var(--space-1);
+    border: var(--bw-1) solid var(--line);
+    border-radius: var(--radius-1);
+    background: var(--surface-2);
+    font-family: var(--font-mono);
+    font-size: var(--text-label);
+  }
+
+  /* Code blocks wrap. A scrolling code block is a horizontal scrollbar. */
+  .answer-prose pre {
+    padding: var(--space-3);
+    border: var(--bw-1) solid var(--line);
+    border-radius: var(--radius-2);
+    background: var(--surface-2);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .answer-prose pre code {
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+
+  /* Tables take the width they are given and wrap inside it. */
+  .answer-prose table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font-size: var(--text-label);
+  }
+
+  .answer-prose th,
+  .answer-prose td {
+    padding: var(--space-2) var(--space-3);
+    border: var(--bw-1) solid var(--line);
+    text-align: left;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .answer-prose th {
+    background: var(--surface-2);
+    color: var(--ink);
+    font-weight: var(--weight-semibold);
+  }
+
+  @container prose (max-width: 479px) {
+    .answer-prose th,
+    .answer-prose td {
+      padding: var(--space-1) var(--space-2);
+    }
+
+    /* A table whose cells carry data-label (the answer renderer adds them) becomes
+       a stack of records: one block per row, each value under its column name. */
+    .answer-prose table[data-reflow],
+    .answer-prose table[data-reflow] tbody,
+    .answer-prose table[data-reflow] tr,
+    .answer-prose table[data-reflow] td {
+      display: block;
+    }
+
+    .answer-prose table[data-reflow] thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    .answer-prose table[data-reflow] tr {
+      margin-top: var(--space-2);
+      border: var(--bw-1) solid var(--line);
+      border-radius: var(--radius-2);
+    }
+
+    .answer-prose table[data-reflow] td {
+      display: grid;
+      grid-template-columns: minmax(0, 6rem) minmax(0, 1fr);
+      gap: var(--space-2);
+      border: 0;
+      border-top: var(--bw-1) solid var(--line);
+    }
+
+    .answer-prose table[data-reflow] td:first-child {
+      border-top: 0;
+    }
+
+    .answer-prose table[data-reflow] td::before {
+      content: attr(data-label);
+      color: var(--ink-muted);
+      font-weight: var(--weight-medium);
+    }
+  }
+}

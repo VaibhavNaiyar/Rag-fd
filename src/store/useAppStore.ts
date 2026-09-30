@@ -1,12 +1,16 @@
 "use client";
 
+import { EventType } from "@ag-ui/core";
 import { create } from "zustand";
 import { streamUtterance, type UtteranceStreamHandle } from "@/lib/chunker";
 import { apiUrl } from "@/lib/endpoints";
 import { createTransport, type Transport } from "@/lib/transport";
 import { applyAgUiEvent } from "@/store/reducer";
 import { createTokenBatcher, type TokenBatcher } from "@/store/tokenBatcher";
+import { createTraceSlice, type TraceSlice } from "@/store/traceSlice";
 import type { AppState } from "@/store/types";
+import { createUiSlice, type UiSlice } from "@/store/uiSlice";
+import { bindUrlSync } from "@/store/urlSync";
 import type { ClientEvent, FixtureInfo } from "@/types/events";
 
 interface AppActions {
@@ -27,7 +31,8 @@ interface AppActions {
   dismissError: () => void;
 }
 
-export type AppStore = AppState & AppActions;
+/** Everything the composed store exposes: the conversation (P0–P4), trace enrichment (P5-F10) and UI/route state (P5-F11). */
+export type AppStore = AppState & AppActions & TraceSlice & UiSlice;
 
 const INITIAL_STATE: AppState = {
   sessions: [],
@@ -54,8 +59,9 @@ const INITIAL_STATE: AppState = {
 let transport: Transport | null = null;
 let batcher: TokenBatcher | null = null;
 let utterance: UtteranceStreamHandle | null = null;
+let stopUrlSync: (() => void) | null = null;
 
-export const useAppStore = create<AppStore>()((set, get) => {
+export const useAppStore = create<AppStore>()((set, get, api) => {
   const emit = (event: ClientEvent) => transport?.send(event);
 
   const loadFixtures = async () => {
@@ -69,12 +75,49 @@ export const useAppStore = create<AppStore>()((set, get) => {
     }
   };
 
+  const traceSlice = createTraceSlice(
+    (updater) => set((state) => updater(state)),
+    () => get(),
+  );
+  const uiSlice = createUiSlice(
+    (updater) => set((state) => updater(state)),
+    () => get(),
+  );
+
+  /** Client-only, once per app: components read and write routing through `uiSlice`, never `location.hash` directly. */
+  const ensureUrlSync = () => {
+    if (stopUrlSync || typeof window === "undefined") return;
+    stopUrlSync = bindUrlSync({
+      getState: () => get(),
+      subscribe: (listener) => api.subscribe((state) => listener(state)),
+      setView: (view) => get().setView(view),
+      selectTurn: (turn) => get().selectTurn(turn),
+      setInspectorTab: (tab) => get().setInspectorTab(tab),
+      setFilters: (filters) => get().setFilters(filters),
+    });
+  };
+
   return {
     ...INITIAL_STATE,
+    ...traceSlice,
+    ...uiSlice,
 
     connect: () => {
+      ensureUrlSync();
       if (transport) return;
-      batcher = createTokenBatcher((event) => set((state) => applyAgUiEvent(state, event)));
+      batcher = createTokenBatcher((event) => {
+        set((state) => applyAgUiEvent(state, event));
+        // Auto-enrich (P5-F10): the moment a turn's run finishes, its `/trace` record
+        // exists on the engine — fetch it in the background so the Inspector opens instantly.
+        if (event.type === EventType.RUN_FINISHED) {
+          const state = get();
+          const sessionId = state.activeSessionId;
+          const turnId = event.runId;
+          if (sessionId && state.turns.some((turn) => turn.sessionId === sessionId && turn.id === turnId)) {
+            state.ensureTrace(sessionId, turnId);
+          }
+        }
+      });
       transport = createTransport({
         onEvent: (event) => batcher?.push(event),
         onStatus: (connection) => {

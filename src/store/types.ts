@@ -62,7 +62,10 @@ export interface SubQueryRecord {
 export type TurnStatus = "listening" | "retrieving" | "answering" | "complete" | "error";
 
 export interface Turn {
+  /** The wire's turn id (`runId`) — not unique on its own; `turn_id` repeats across sessions and after a reconnect. Store lookups use {@link turnKey}, never this alone. */
   id: string;
+  /** The session this turn belongs to. Paired with {@link id}, it is the turn's real identity (SD-01). */
+  sessionId: string;
   transcript: { text: string; atMs: number }[];
   utteranceEndMs: number | null;
   decisions: ControllerDecisionRecord[];

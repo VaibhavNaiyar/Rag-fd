@@ -1,7 +1,7 @@
 import { EventType, type AGUIEvent } from "@ag-ui/core";
 import { EventSchemas } from "@ag-ui/core/schemas";
 import { describe, expect, it } from "vitest";
-import { applyAgUiEvent } from "@/store/reducer";
+import { applyAgUiEvent, turnKey } from "@/store/reducer";
 import { isSuppressed, latestVersion, retrievalLeadMs, selectVersion } from "@/store/selectors";
 import type { AppState } from "@/store/types";
 import type { Hit, SharedTurn, VersionRecord } from "@/types/events";
@@ -287,5 +287,77 @@ describe("applyAgUiEvent", () => {
   it("flags a patch that does not apply instead of rendering drifted state", () => {
     const state = play([...opening(), patch("t404", "replace", "utteranceEndMs", 1)]);
     expect(state.lastError?.code).toBe("state_out_of_sync");
+  });
+});
+
+/**
+ * SD-01: `turn_id` repeats across sessions — the engine restarts numbering at
+ * `t1` for every new session (a reconnect, or an explicit `session.new`). A
+ * turn's real identity is `${sessionId}:${turnId}` ({@link turnKey}), and
+ * `activeSessionId` must track whichever session's snapshot arrived most
+ * recently, not just the first one this store instance ever saw.
+ */
+describe("SD-01: turn identity survives a reconnect that reuses turn_id", () => {
+  it("a reused t1 after a reconnect creates a second turn, not an overwrite of the first", () => {
+    const state = play([
+      ...opening("s1"),
+      ...turnStart("t1"),
+      patch("t1", "add", "transcript/-", { text: "first session's turn one", atMs: 10 }),
+      // Reconnect: a new session, engine numbering restarts at t1.
+      ...opening("s2"),
+      ...turnStart("t1"),
+      patch("t1", "add", "transcript/-", { text: "second session's turn one", atMs: 10 }),
+    ]);
+
+    expect(state.turns).toHaveLength(2);
+    const first = state.turns.find((t) => t.sessionId === "s1");
+    const second = state.turns.find((t) => t.sessionId === "s2");
+    expect(first?.id).toBe("t1");
+    expect(second?.id).toBe("t1");
+    expect(first?.transcript[0]?.text).toBe("first session's turn one");
+    expect(second?.transcript[0]?.text).toBe("second session's turn one");
+  });
+
+  it("activeSessionId follows the latest snapshot, not the first one ever seen", () => {
+    const state = play([...opening("s1"), ...opening("s2")]);
+    expect(state.activeSessionId).toBe("s2");
+  });
+
+  it("both sessions accumulate in the sessions list across a reconnect", () => {
+    const state = play([...opening("s1"), ...opening("s2")]);
+    expect(state.sessions.map((s) => s.id).sort()).toEqual(["s1", "s2"]);
+  });
+
+  it("a STATE_DELTA after a reconnect patches the new session's turn, not the old one's", () => {
+    const state = play([
+      ...opening("s1"),
+      ...turnStart("t1"),
+      ...opening("s2"),
+      ...turnStart("t1"),
+      patch("t1", "replace", "utteranceEndMs", 999),
+    ]);
+    const first = state.turns.find((t) => t.sessionId === "s1");
+    const second = state.turns.find((t) => t.sessionId === "s2");
+    expect(first?.utteranceEndMs).toBeNull();
+    expect(second?.utteranceEndMs).toBe(999);
+  });
+
+  it("a tool call after a reconnect attributes its retrieval to the new session's turn", () => {
+    const state = play([
+      ...opening("s1"),
+      ...turnStart("t1"),
+      ...opening("s2"),
+      ...turnStart("t1"),
+      ...search("t1_p1", { query: "reconnected", trigger: "provisional", atMs: 100 }),
+    ]);
+    const first = state.turns.find((t) => t.sessionId === "s1");
+    const second = state.turns.find((t) => t.sessionId === "s2");
+    expect(first?.retrievals).toHaveLength(0);
+    expect(second?.retrievals).toHaveLength(1);
+  });
+
+  it("turnKey disambiguates what a bare id cannot", () => {
+    expect(turnKey("s1", "t1")).not.toBe(turnKey("s2", "t1"));
+    expect(turnKey("s1", "t1")).toBe(turnKey("s1", "t1"));
   });
 });
