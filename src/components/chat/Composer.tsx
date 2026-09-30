@@ -109,7 +109,7 @@ export function Composer() {
             aria-label="Send request"
             className={cn(
               "mb-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-pill",
-              "bg-primary text-white transition-[filter,opacity] duration-150 ease-oneui",
+              "bg-primary text-[var(--on-primary)] transition-[filter,opacity] duration-150 ease-oneui",
               "hover:brightness-110 disabled:opacity-30",
             )}
           >

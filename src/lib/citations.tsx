@@ -1,6 +1,6 @@
 import { Children, cloneElement, isValidElement, type ReactNode } from "react";
 import type { Components } from "react-markdown";
-import { CitationChip } from "@/components/chat/CitationChip";
+import { CitationRef } from "@/components/console/CitationRef";
 import { findCitationMarkers } from "@/lib/citationPattern";
 import { resolveCitation } from "@/store/selectors";
 import type { Hit } from "@/types/events";
@@ -22,7 +22,7 @@ function chipify(text: string, hits: Hit[], keyPrefix: string): ReactNode[] {
   findCitationMarkers(text).forEach((match, index) => {
     if (match.start > cursor) nodes.push(text.slice(cursor, match.start));
     nodes.push(
-      <CitationChip
+      <CitationRef
         key={`${keyPrefix}-${index}`}
         marker={match.marker}
         hit={resolveCitation(hits, match.marker)}

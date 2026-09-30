@@ -66,7 +66,9 @@ export function ReplayBar() {
               aria-pressed={speed === option}
               className={cn(
                 "rounded-pill px-2 py-0.5 font-mono text-caption transition-colors",
-                speed === option ? "bg-primary text-white" : "text-warn-ink hover:bg-[var(--warn-hover)]",
+                speed === option
+                  ? "bg-primary text-[var(--on-primary)]"
+                  : "text-warn-ink hover:bg-[var(--warn-hover)]",
               )}
             >
               {option}×

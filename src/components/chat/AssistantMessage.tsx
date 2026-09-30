@@ -49,7 +49,7 @@ export function AssistantMessage({ turn }: { turn: Turn }) {
       <ActivityLog turn={turn} />
 
       {turn.status === "error" ? (
-        <p className="rounded-md border border-edge-error bg-error-soft px-3.5 py-3 text-body text-error">
+        <p className="break-words rounded-md border border-edge-error bg-error-soft px-3.5 py-3 text-body text-error">
           {turn.errorMessage ?? "The engine reported an error on this turn."}
         </p>
       ) : version && version.body.length > 0 ? (

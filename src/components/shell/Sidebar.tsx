@@ -45,7 +45,7 @@ export function Sidebar({ className }: { className?: string }) {
           <span
             aria-hidden
             className="h-6 w-6 shrink-0 rounded-md"
-            style={{ background: "var(--ai-glow)" }}
+            style={{ background: "var(--ai-glow)", boxShadow: "var(--glow-primary)" }}
           />
           <span className="truncate text-label font-semibold text-ink">Streaming Live RAG</span>
         </div>

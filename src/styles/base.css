@@ -1,0 +1,115 @@
+/*
+ * Element defaults, written in tokens. Imported by globals.css and inlined by
+ * postcss-import, so everything here lands in Tailwind's base layer: after the
+ * preflight reset, before components and utilities.
+ *
+ * No colour literal appears in this file; every colour is a var(--token).
+ */
+
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--line);
+  }
+
+  html {
+    height: 100%;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    height: 100%;
+    background: var(--canvas);
+    color: var(--ink-body);
+    font-family: var(--font-ui);
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Notches and home indicators (viewport-fit=cover). All zero on a desktop.
+       The new app frame (P4) handles these itself and removes this line. */
+    padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  }
+
+  /* Long ids, URLs and unbroken strings wrap instead of forcing a horizontal
+     scrollbar. Table cells are left alone: their width is the table's business. */
+  :where(p, li, dt, dd, blockquote, figcaption, h1, h2, h3, h4, h5, h6, summary, label, a, code, kbd, samp, pre) {
+    overflow-wrap: anywhere;
+  }
+
+  /* A flex or grid item may shrink below the width of its content, so one long
+     word in one item cannot widen the whole row. Zero specificity: any class wins. */
+  :where(.flex, .inline-flex, .grid, .inline-grid) > * {
+    min-width: 0;
+  }
+
+  /* Digits line up wherever a number is read against another. */
+  :where(time, table, [data-tabular]) {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Keyboard focus. A 2px ring, 3:1 or better against every surface. Chrome is
+     navy in both themes, so it takes its own ring colour. */
+  :focus-visible {
+    outline: var(--focus-width) solid var(--focus-ring);
+    outline-offset: var(--focus-offset);
+  }
+
+  [data-surface="chrome"] :focus-visible,
+  [data-surface="chrome"]:focus-visible {
+    outline-color: var(--focus-on-chrome);
+  }
+
+  ::selection {
+    background: var(--accent-edge);
+    color: var(--ink);
+  }
+
+  /* Same selectors as the preflight rule they replace, so they win on order. */
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--ink-muted);
+    opacity: 1;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-control) transparent;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* Windows high-contrast mode replaces the colours; keep the focus ring bold
+     enough to find. The full mapping arrives with the accessibility phase. */
+  @media (forced-colors: active) {
+    :focus-visible {
+      outline-width: 3px;
+    }
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* InspectorFind's current match (P7-F14) — toggled on an existing rendered
+     element, never on an injected node, so React's own reconciliation of that
+     subtree is never in question. */
+  .inspector-find-current {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+    background: var(--accent-soft);
+  }
+}

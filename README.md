@@ -1,5 +1,7 @@
 # Streaming Live RAG — operator console
 
+Drive Link for Project - https://drive.google.com/drive/folders/1E2CgsIxWUS0tiNK97Ry4drHLSNWfKgti?usp=sharing
+
 Frontend for **Samsung PRISM GenAI Hackathon, Theme 04**. Next.js 16 · TypeScript · Tailwind · Zustand.
 
 This is not a chat product. It is the instrument that makes the engine's behaviour
@@ -24,11 +26,16 @@ npm install
 npm run dev          # console on :3000, engine expected on :8000 of the same host
 ```
 
-Open <http://localhost:3000>. Add `?replay=1` for the replay bar.
+Open <http://localhost:3000>. Add `?replay=1` for the replay bar. The address after the
+`#` is the view: `#/console`, `#/traces`, `#/metrics`, `#/inspect/<session>/<turn>`.
 
 ```bash
-npm run check        # typecheck + lint + tests
+npm run check        # typecheck + lint + design-token rules + unit tests
 npm run build        # static export into ./out
+npm run dev:legacy   # the previous three-column shell, until it is deleted (P12)
+npm run dev:kit      # the design kit at /kit: every token, primitive and state
+npm run build:e2e    # the three builds the browser tests serve side by side
+npm run test:e2e     # browser tests, 8 viewports x 2 themes (run build:e2e first)
 ```
 
 ### Environment
@@ -36,6 +43,9 @@ npm run build        # static export into ./out
 | Variable | Default | Meaning |
 |---|---|---|
 | `NEXT_PUBLIC_WS_URL` | same origin; `ws://<host>:8000/stream` under `npm run dev` | Absolute engine endpoint. The HTTP API (`/fixtures`) is derived from it |
+| `NEXT_PUBLIC_ENGINE_URL` | same origin | Base URL for the engine's `/health`, when the engine is not on the console's origin |
+| `NEXT_PUBLIC_LEGACY_SHELL` | unset (the new frame) | `1` builds the previous shell instead. Read at build time, so a build has one or the other |
+| `NEXT_PUBLIC_KIT` | unset (no kit) | `1` adds the `/kit` design page to the build. The production export has no such route |
 
 Leaving `NEXT_PUBLIC_WS_URL` unset is what the single-container deployment relies on.
 

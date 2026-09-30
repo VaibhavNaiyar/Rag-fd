@@ -1,0 +1,91 @@
+/*
+ * LEGACY — delete in P12 (see PHASES.md, Appendix C).
+ *
+ * Styles for the components that are still to be replaced: the three-column
+ * shell, the scroll helper and the two "AI" text treatments. Nothing new may
+ * depend on anything in this file.
+ *
+ * The brand gradient and the travelling sheen are gone. `.text-gradient-ai` and
+ * `.shimmer-ai` keep their names, so the components that use them still compile,
+ * but they are now flat colour.
+ */
+
+@layer components {
+  /* The shell owns the only grid in the app: sessions, the conversation, and a
+     persistent trace pane. The safe-area insets are taken off the height because
+     the body pads itself by them (base.css). */
+  .app-shell {
+    display: grid;
+    grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--trace-w);
+    height: calc(100dvh - var(--safe-top) - var(--safe-bottom));
+    overflow: hidden;
+    transition: grid-template-columns var(--dur-2) var(--ease-standard);
+  }
+
+  [data-sidebar="closed"] {
+    --sidebar-w: 0px;
+  }
+
+  [data-trace="closed"] {
+    --trace-w: 0px;
+  }
+
+  /* Below 768px the sidebar becomes an overlay drawer and the grid collapses to
+     one column, so the chat keeps the full width underneath. */
+  @media (max-width: 767px) {
+    [data-sidebar="open"] {
+      --sidebar-w: 0px;
+    }
+  }
+
+  /* Below 1180px there isn't room for three columns: the persistent pane
+     collapses regardless of its own toggle, and the inline trace carries the load. */
+  @media (max-width: 1179px) {
+    .app-shell {
+      --trace-w: 0px;
+    }
+  }
+
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-control) transparent;
+  }
+  .scroll-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb {
+    background: var(--line-control);
+    border-radius: var(--radius-2);
+  }
+  .scroll-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .text-gradient-ai {
+    color: var(--accent-ink);
+  }
+
+  .shimmer-ai {
+    color: var(--ink-muted);
+  }
+}
+
+/* The composer is the element that visibly travels from centre to bottom on the
+   first send. Naming it hands the move to the browser's View Transition. */
+.composer-shell {
+  view-transition-name: composer;
+}
+
+::view-transition-old(composer),
+::view-transition-new(composer) {
+  animation-duration: var(--dur-2);
+  animation-timing-function: var(--ease-standard);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(composer),
+  ::view-transition-new(composer) {
+    animation-duration: 1ms;
+  }
+}

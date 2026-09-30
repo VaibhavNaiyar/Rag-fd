@@ -5,13 +5,24 @@
   "description": "Streaming Live RAG — operator console. Samsung PRISM GenAI Hackathon, Theme 04.",
   "scripts": {
     "dev": "next dev",
+    "dev:legacy": "NEXT_PUBLIC_LEGACY_SHELL=1 next dev",
+    "dev:kit": "NEXT_PUBLIC_KIT=1 next dev",
     "build": "next build",
+    "build:legacy": "node scripts/build-variants.mjs legacy",
+    "build:kit": "node scripts/build-variants.mjs kit",
+    "build:e2e": "node scripts/build-variants.mjs",
     "start": "next start",
-    "lint": "eslint src",
+    "lint": "eslint src e2e scripts playwright.config.ts tailwind.config.ts vitest.config.ts vitest.workspace.ts eslint.config.mjs",
     "typecheck": "tsc --noEmit",
+    "check:tokens": "node scripts/check-tokens.mjs",
     "test": "vitest run",
+    "test:dom": "vitest run --project dom",
+    "test:e2e": "playwright test",
+    "test:e2e:update": "playwright test --update-snapshots",
+    "e2e:mock": "node e2e/mock-engine/server.mjs",
+    "baseline:report": "node scripts/baseline-report.mjs",
     "test:watch": "vitest",
-    "check": "npm run typecheck && npm run lint && npm run test"
+    "check": "npm run typecheck && npm run lint && npm run check:tokens && npm run test"
   },
   "dependencies": {
     "@ag-ui/core": "1.0.0",
@@ -28,15 +39,24 @@
     "zustand": "5.0.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.63.0",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.7",
     "@types/node": "22.10.5",
     "@types/react": "19.0.7",
     "@types/react-dom": "19.0.3",
+    "@types/ws": "8.18.1",
     "autoprefixer": "10.4.20",
     "eslint": "9.18.0",
     "eslint-config-next": "^16.3.5",
+    "jsdom": "24.1.3",
     "postcss": "8.4.49",
+    "postcss-import": "15.1.0",
     "tailwindcss": "3.4.17",
     "typescript": "5.7.3",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "ws": "8.21.3"
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@/lib/cn";
+import { MetricCell, type MetricTone } from "@/components/ui/MetricCell";
 
 export interface StatProps {
   label: string;
@@ -11,23 +11,15 @@ export interface StatProps {
   className?: string;
 }
 
-const VALUE_TONES: Record<NonNullable<StatProps["tone"]>, string> = {
-  default: "text-ink",
-  primary: "text-primary-ink",
-  ok: "text-[var(--ok-ink)]",
-  warn: "text-warn-ink",
-  error: "text-error",
+const TONES: Record<NonNullable<StatProps["tone"]>, MetricTone> = {
+  default: "default",
+  primary: "accent",
+  ok: "ok",
+  warn: "warn",
+  error: "error",
 };
 
-/** One readout in the metrics bar. Mono + tabular so digits do not jitter. */
+/** LEGACY, deleted in P12: the old name of MetricCell, with its old props. */
 export function Stat({ label, value, hint, tone = "default", className }: StatProps) {
-  return (
-    <div className={cn("min-w-0", className)}>
-      <div className="truncate text-caption uppercase tracking-wide text-ink-muted">{label}</div>
-      <div className={cn("font-mono text-[15px] font-semibold tabular leading-6", VALUE_TONES[tone])}>
-        {value}
-      </div>
-      {hint && <div className="truncate text-caption text-ink-muted">{hint}</div>}
-    </div>
-  );
+  return <MetricCell label={label} value={value} hint={hint} tone={TONES[tone]} className={className} />;
 }

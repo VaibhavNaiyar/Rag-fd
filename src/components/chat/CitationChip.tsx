@@ -51,7 +51,7 @@ export function CitationChip({ marker, hit }: CitationChipProps) {
         "mx-0.5 inline-flex items-baseline rounded-sm border px-1.5 py-px align-baseline",
         "font-mono text-[11px] transition-colors duration-150 ease-oneui",
         isActive
-          ? "border-primary bg-primary text-white"
+          ? "border-primary bg-primary text-[var(--on-primary)]"
           : "border-edge-primary bg-primary-soft text-primary-ink hover:border-primary",
       )}
     >

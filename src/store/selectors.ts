@@ -1,6 +1,9 @@
 import type { AnswerVersion, AppState, ControllerDecisionRecord, Turn } from "@/store/types";
 import { FIXTURE_FAMILIES } from "@/lib/constants";
-import type { FixtureInfo, Hit } from "@/types/events";
+import { turnKey } from "@/store/reducer";
+import type { TraceEntry, TraceStatus } from "@/store/traceSlice";
+import type { Decision, FixtureInfo, Hit } from "@/types/events";
+import type { TraceRecord } from "@/types/trace";
 
 /**
  * Derived reads.
@@ -147,4 +150,96 @@ export function featuredFixtures(fixtures: FixtureInfo[]): FeaturedFixture[] {
     if (featured.length === 4) break;
   }
   return featured;
+}
+
+/**
+ * P5-F13: selectors safe to pass straight to `useAppStore(selector)`.
+ *
+ * `state.turns` (SD-01) now holds every turn from every session this store
+ * instance has seen, not just the active one, so the Console's ledger needs a
+ * session-scoped read; the Inspector needs the live turn and its fetched trace
+ * together; a scorecard needs to not rebuild its object on every unrelated
+ * store change. Each cache below is a single slot or a `WeakMap` keyed by the
+ * exact reference zustand hands it, which is stable across a render that did
+ * not touch the relevant state (the reducer and the slices always replace
+ * rather than mutate) — so `useAppStore(selectX)` never loops on its own output.
+ */
+
+let sessionTurnsCache: { turns: Turn[]; sessionId: string | null; result: Turn[] } | null = null;
+
+/** Turns belonging to the active session, in order — what the Console's ledger renders. `null` (no active session yet) shows everything seen so far, which is exactly the turns array on a fresh connection. */
+export function selectSessionTurns(state: AppState): Turn[] {
+  if (sessionTurnsCache && sessionTurnsCache.turns === state.turns && sessionTurnsCache.sessionId === state.activeSessionId) {
+    return sessionTurnsCache.result;
+  }
+  const result = state.activeSessionId === null ? state.turns : state.turns.filter((turn) => turn.sessionId === state.activeSessionId);
+  sessionTurnsCache = { turns: state.turns, sessionId: state.activeSessionId, result };
+  return result;
+}
+
+export interface TurnSummary {
+  mode: Decision | null;
+  searches: number;
+  claims: number;
+  ttftMs: number | null;
+  completeMs: number | null;
+  costUsd: number | null;
+}
+
+const turnSummaryCache = new WeakMap<Turn, TurnSummary>();
+
+/** The one-line summary (P6-F15: `mode · searches · claims · ttft · complete · cost`). */
+export function selectTurnSummary(turn: Turn): TurnSummary {
+  const cached = turnSummaryCache.get(turn);
+  if (cached) return cached;
+  const version = latestVersion(turn);
+  const summary: TurnSummary = {
+    mode: latestDecision(turn)?.decision ?? null,
+    searches: turn.retrievals.length,
+    claims: version?.claims.length ?? 0,
+    ttftMs: turn.latencyMs?.firstToken ?? null,
+    completeMs: turn.latencyMs?.complete ?? null,
+    costUsd: turn.cost?.turnUsd ?? null,
+  };
+  turnSummaryCache.set(turn, summary);
+  return summary;
+}
+
+const sessionMetricsCache = new WeakMap<Turn[], SessionMetrics>();
+
+/** {@link selectSessionMetrics}, memoised on the turns array's identity — safe to select straight off the store, unlike the underlying function (see its own doc comment). */
+export function selectSessionMetricsMemo(turns: Turn[]): SessionMetrics {
+  const cached = sessionMetricsCache.get(turns);
+  if (cached) return cached;
+  const computed = selectSessionMetrics(turns);
+  sessionMetricsCache.set(turns, computed);
+  return computed;
+}
+
+export interface MergedTurn {
+  /** The live, streaming record — null if this turn was never seen live in this store instance (opened from the Traces table instead). */
+  live: Turn | null;
+  /** The fetched `/trace` record — null until `ensureTrace` resolves, or if it never will (evicted, errored). */
+  trace: TraceRecord | null;
+  traceStatus: TraceStatus;
+}
+
+const mergedTurnCache = new Map<string, { turns: Turn[]; traces: Record<string, TraceEntry>; result: MergedTurn }>();
+
+/**
+ * `mergeTurn`: what the Inspector reads for one turn — the live record (if this
+ * session is still open) and its trace record (if fetched), together. Bounded in
+ * practice by how many distinct turns a session opens the Inspector on, the same
+ * order of magnitude as `state.turns` itself.
+ */
+export function selectMergedTurn(turns: Turn[], traces: Record<string, TraceEntry>, sessionId: string, turnId: string): MergedTurn {
+  const key = turnKey(sessionId, turnId);
+  const cached = mergedTurnCache.get(key);
+  if (cached && cached.turns === turns && cached.traces === traces) return cached.result;
+
+  const live = turns.find((turn) => turn.sessionId === sessionId && turn.id === turnId) ?? null;
+  const entry = traces[key];
+  const result: MergedTurn = { live, trace: entry?.record ?? null, traceStatus: entry?.status ?? "idle" };
+  mergedTurnCache.set(key, { turns, traces, result });
+  return result;
 }

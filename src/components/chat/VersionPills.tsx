@@ -29,7 +29,7 @@ export function VersionPills({ versions, activeVersion, onSelect }: VersionPills
             aria-pressed={active}
             className={cn(
               "rounded-pill px-2.5 py-0.5 font-mono text-caption transition-colors duration-150 ease-oneui",
-              active ? "bg-primary text-white" : "text-ink-muted hover:text-ink-body",
+              active ? "bg-primary text-[var(--on-primary)]" : "text-ink-muted hover:text-ink-body",
             )}
           >
             v{version.version}

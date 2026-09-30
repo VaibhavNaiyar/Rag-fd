@@ -16,7 +16,11 @@ export function ErrorBanner() {
       className="flex items-center gap-2 border-b border-edge-error bg-error-soft px-3 py-2 text-caption text-error"
     >
       <AlertCircle size={14} aria-hidden className="shrink-0" />
-      <span className="min-w-0 flex-1">
+      {/* break-words: min-w-0/flex-1 fix flex sizing, not word-breaking — error text
+          is the one place in this app that isn't author-controlled UI copy (a raw
+          JS Error#toString or a backend exception), so it's the likeliest spot for
+          an unbroken long token that would otherwise overflow past 375px. */}
+      <span className="min-w-0 flex-1 break-words">
         <span className="font-mono">{lastError.code}:</span> {lastError.message}
       </span>
       <IconButton
